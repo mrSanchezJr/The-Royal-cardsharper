@@ -1,0 +1,60 @@
+# ====================================================================
+# The Royal Cardshaper - Git Ignore Rules
+# ====================================================================
+
+# Compiled Executables and Objects
+*.o
+*.obj
+*.d
+*.pdb
+*.ilk
+*.exp
+*.map
+
+# Build Artifacts (Keep source / lib, ignore build outputs if needed)
+TheRoyalCardshaper.exe
+build/
+bin/
+obj/
+out/
+
+# Local Save Data & Logs
+save.ini
+*.log
+*.sav
+
+# Environment and Secrets
+.env
+.env.*
+*.env
+
+# Node / Web Tooling (if any scripts/tools used)
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE & Editor Configuration / Caches
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.history/
+
+# Temporary and Cache Files
+*.tmp
+*.temp
+*.bak
+*~
+.cache/
+
+# OS Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+._*
