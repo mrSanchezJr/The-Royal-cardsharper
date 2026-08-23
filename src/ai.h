@@ -10,6 +10,7 @@ typedef struct {
     float look_away_timer;
     float next_look_away_in;
     int look_away_counter; // Counter for deterministic look-away sequence
+    int distraction_index; // Which courtier/servant is distracting the King
 } AIState;
 
 void InitAI(AIState* ai, int match_level, int card_skill);

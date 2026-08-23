@@ -50,7 +50,7 @@ const char* GetUIText(const char* key, Language lang) {
 
     if (strcmp(key, "MENU_TITLE") == 0) {
         if (lang == LANG_EN) return "THE ROYAL CARDSHAPER";
-        return "КОРОЛЕВСКИЙ КАРТОШЛЁП";
+        return "КОРОЛЕВСКИЙ ШУЛЕР";
     }
     if (strcmp(key, "CONTINUE") == 0) {
         if (lang == LANG_EN) return "CONTINUE MATCH";
@@ -66,7 +66,7 @@ const char* GetUIText(const char* key, Language lang) {
     }
     if (strcmp(key, "SETTINGS") == 0) {
         if (lang == LANG_EN) return "SETTINGS";
-        return "ДОП. НАСТРОЙКИ";
+        return "НАСТРОЙКИ";
     }
     if (strcmp(key, "AI_DIFFICULTY") == 0) {
         if (lang == LANG_EN) return "AI SKILL";
@@ -88,6 +88,24 @@ const char* GetUIText(const char* key, Language lang) {
         if (lang == LANG_EN) return "LANGUAGE: ENGLISH";
         return "ЯЗЫК: РУССКИЙ";
     }
+    if (strcmp(key, "TRUMP_HEADER") == 0) {
+        return (lang == LANG_EN) ? "TRUMP" : "КОЗЫРЬ";
+    }
+    if (strcmp(key, "DECK_CHIP_FMT") == 0) {
+        return (lang == LANG_EN) ? "In deck: %d" : "В колоде: %d";
+    }
+    if (strcmp(key, "MUSIC_VOL_FMT") == 0) {
+        return (lang == LANG_EN) ? "MUSIC: %d" : "МУЗЫКА: %d";
+    }
+    if (strcmp(key, "SFX_VOL_FMT") == 0) {
+        return (lang == LANG_EN) ? "SFX: %d" : "ЗВУКИ: %d";
+    }
+    if (strcmp(key, "WINDOW_SIZE_640")  == 0) { return (lang == LANG_EN) ? "WINDOW: 640 x 360"  : "ОКНО: 640 x 360";  }
+    if (strcmp(key, "WINDOW_SIZE_960")  == 0) { return (lang == LANG_EN) ? "WINDOW: 960 x 540"  : "ОКНО: 960 x 540";  }
+    if (strcmp(key, "WINDOW_SIZE_1280") == 0) { return (lang == LANG_EN) ? "WINDOW: 1280 x 720"  : "ОКНО: 1280 x 720 (по умолч.)"; }
+    if (strcmp(key, "WINDOW_SIZE_1366") == 0) { return (lang == LANG_EN) ? "WINDOW: 1366 x 768"  : "ОКНО: 1366 x 768"; }
+    if (strcmp(key, "WINDOW_SIZE_1600") == 0) { return (lang == LANG_EN) ? "WINDOW: 1600 x 900"  : "ОКНО: 1600 x 900"; }
+    if (strcmp(key, "WINDOW_SIZE_1920") == 0) { return (lang == LANG_EN) ? "WINDOW: 1920 x 1080" : "ОКНО: 1920 x 1080"; }
     if (strcmp(key, "CREDITS") == 0) {
         if (lang == LANG_EN) return "CREDITS";
         return "ОБ АВТОРАХ";
@@ -271,20 +289,48 @@ const char* GetKingComment(KingEvent event, Language lang) {
 // -------------------------------------------------------------
 const char* GetCreditsText(Language lang) {
     if (lang == LANG_EN) {
-        return "The Royal Cardshaper / Королевский Картошлёп\n\n"
+        return "The Royal Cardshaper\n\n"
                "Engine: Raylib 5.0 (C99)\n"
-               "Platform: Windows x64 (Standalone < 1.44 MB)\n\n"
-               "Code & AI: Antigravity AI\n"
-               "Game Design & Narrative: User\n\n"
+               "Platform: Windows x64\n\n"
+               "Code & AI: Sanchez Jr, Gemeni 3.7\n"
+               "Game Design & Narrative: Rui\n\n"
                "[ Click or Press SPACE / ESC to Return ]";
     } else {
-        return "The Royal Cardshaper / Королевский Картошлёп\n\n"
+        return "The Royal Cardshaper\n\n"
                "Движок: Raylib 5.0 (C99)\n"
-               "Платформа: Windows x64 (Автономный < 1.44 МБ)\n\n"
-               "Код и ИИ: Antigravity AI\n"
-               "Геймдизайн и Сюжет: User\n\n"
+               "Платформа: Windows x64\n\n"
+               "Код и ИИ: Sanchez Jr, Gemeni 3.7\n"
+               "Геймдизайн и Сюжет: Rui\n\n"
                "[ Кликните или нажмите ПРОБЕЛ / ESC для возврата ]";
     }
+}
+
+// -------------------------------------------------------------
+// King Distractions (why he turns away) — RU, EN
+// -------------------------------------------------------------
+int GetDistractionCount(void) {
+    return 6;
+}
+
+const char* GetDistractionText(int index, Language lang) {
+    static const char* ru[] = {
+        "Слуга: Ваше Величество, донесение из провинций!",
+        "Придворный: Государь, нужна ваша печать на указе!",
+        "Гонец: Срочное письмо от королевы!",
+        "Казначей: Ваше Величество, казна снова пуста!",
+        "Повар: Что прикажете подать на вечерний пир?",
+        "Музыкант: Какую мелодию сыграть, сир?"
+    };
+    static const char* en[] = {
+        "Servant: Your Majesty, dispatches from the provinces!",
+        "Courtier: Sire, your seal is needed on a decree!",
+        "Messenger: An urgent letter from the Queen!",
+        "Treasurer: Your Majesty, the treasury is empty again!",
+        "Cook: What shall be served at tonight's feast?",
+        "Musician: Which melody shall I play, sire?"
+    };
+    if (index < 0 || index >= 6) index = 0;
+    return (lang == LANG_EN) ? en[index] : ru[index];
 }
 
 // -------------------------------------------------------------
@@ -315,6 +361,7 @@ const char* GetIntroDialogueText(int step, Language lang) {
             case 0: return "King: Who dares enter my hall? Ah, a cloaked stranger...\n\n[Press SPACE or Click]";
             case 1: return "Stranger: I have come to accept your challenge. To test my luck at cards.\n\n[Press SPACE or Click]";
             case 2: return "King: Bold! At stake is my daughter's hand and half the kingdom.\nBut tell me... do you know the rules of DURAK?\n\n[Press SPACE or Click]";
+            case 3: return "King: Hm?\n\n[Press SPACE or Click]";
             default: return "";
         }
     } else {

@@ -1,4 +1,5 @@
 #include "ai.h"
+#include "story.h"
 #include <stdlib.h>
 
 static void RemoveCardFromHand(CardCollection* hand, int index) {
@@ -16,6 +17,7 @@ void InitAI(AIState* ai, int match_level, int card_skill) {
     ai->look_away_timer = 0;
     ai->next_look_away_in = 3.5f + (rand() % 25) / 10.0f; 
     ai->look_away_counter = 0;
+    ai->distraction_index = 0;
 }
 
 void UpdateAILooking(AIState* ai, float dt) {
@@ -29,6 +31,7 @@ void UpdateAILooking(AIState* ai, float dt) {
         ai->next_look_away_in -= dt;
         if (ai->next_look_away_in <= 0) {
             ai->is_looking_away = true;
+            ai->distraction_index = rand() % GetDistractionCount();
             
             if (ai->match_level == 0) {
                 // Level 1: ALWAYS 3.5 seconds

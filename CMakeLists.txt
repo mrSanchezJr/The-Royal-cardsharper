@@ -8,41 +8,24 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # Optimize for size, strip symbols, disable exceptions/RTTI (C++ mostly but good practice)
     add_compile_options(-Os -s -ffunction-sections -fdata-sections -Wall)
-    add_link_options(-static -s -Wl,--gc-sections -flto)
+    add_link_options(-static -s -Wl,--gc-sections)
 endif()
 
-# Use local Raylib installation
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
-# Disable features we don't need to save space
-set(SUPPORT_MODULE_RMODELS OFF CACHE BOOL "" FORCE)
-set(SUPPORT_MODULE_RAUDIO OFF CACHE BOOL "" FORCE) 
-set(SUPPORT_FILEFORMAT_PNG OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_BMP OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_TGA OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_JPG OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_GIF OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_QOI OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_PSD OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_HDR OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_PIC OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_PNM OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_DDS OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_PKM OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_KTX OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_PVR OFF CACHE BOOL "" FORCE)
-set(SUPPORT_FILEFORMAT_ASTC OFF CACHE BOOL "" FORCE)
-
-add_subdirectory(C:/raylib/raylib raylib_build)
+# Link against the same prebuilt raylib used by build.bat (w64devkit bundle).
+# Do NOT build C:/raylib/raylib sources: that tree is raylib 6.0 and its
+# window message loop hangs on some systems; the w64devkit lib is stable.
+add_library(raylib STATIC IMPORTED)
+set_target_properties(raylib PROPERTIES
+    IMPORTED_LOCATION "C:/raylib/w64devkit/lib/libraylib.a"
+    INTERFACE_INCLUDE_DIRECTORIES "C:/raylib/w64devkit/include"
+)
 
 # Gather source files
 file(GLOB SOURCES "src/*.c")
 
 # Add executable
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
+target_link_libraries(${PROJECT_NAME} PRIVATE raylib gdi32 winmm)
 
 # Setup UPX download if it doesn't exist
 set(UPX_URL "https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip")

@@ -41,6 +41,9 @@ const char* GetEpilogueText(Language lang);
 const char* GetCaughtText(Language lang);
 const char* GetCreditsText(Language lang);
 
+int GetDistractionCount(void);
+const char* GetDistractionText(int index, Language lang);
+
 void GetInvalidDefenseReason(Card attack, Card defend, Suit trump, Language lang, char* outBuffer, size_t bufferSize);
 void GetInvalidAttackReason(Card attack, const GameState* game, Language lang, char* outBuffer, size_t bufferSize);
 
