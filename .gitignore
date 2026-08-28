@@ -16,6 +16,11 @@ src/king_idle_state.h
 src/king_angry_state.h
 src/king_overwhelmed_state.h
 src/king_turned_head.h
+src/btn_press.h
+src/lesb_final.h
+src/princess.h
+src/wanderer_hooded.h
+src/wanderer_idle.h
 src/table_sprite.h
 
 # UPX packer artifacts
@@ -72,3 +77,4 @@ Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
 ._*
+txt.txt

@@ -29,9 +29,11 @@ void LoadSaveData(SaveData* data) {
 
         data->tutorial_completed = (tut != 0);
         data->first_launch_done = (firstDone != 0);
+        if (data->matches_won < 0) data->matches_won = 0;
+        if (data->matches_won > 3) data->matches_won = 3;
         if (data->language < 0 || data->language > 1) data->language = 0;
         if (data->ai_difficulty < 0 || data->ai_difficulty > 2) data->ai_difficulty = 0;
-        if (data->window_resolution < 0 || data->window_resolution > 5) data->window_resolution = 2;
+        if (data->window_resolution < 0 || data->window_resolution > 5) data->window_resolution = 4; // Default: 1600x900
         if (data->music_volume < 0 || data->music_volume > 10) data->music_volume = 7;
         if (data->sfx_volume < 0 || data->sfx_volume > 10) data->sfx_volume = 7;
         fclose(file);

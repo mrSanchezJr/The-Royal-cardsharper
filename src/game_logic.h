@@ -66,7 +66,8 @@ bool PlayerAttack(GameState* game, int card_index);
 bool PlayerDefend(GameState* game, int hand_index, int table_index);
 void PlayerPass(GameState* game); // Player passes attack or takes defense
 bool PlayerCheat(GameState* game); // Sleight of hand (random card swap)
-bool PlayerCheatSpecific(GameState* game, int hand_index, Card* out_old_card, Card* out_new_card); // Sleight of hand (specific card swap)
+bool PlayerCheatSpecific(GameState* game, int hand_index, Card* out_old_card, Card* out_new_card); // Sleight of hand (random card from deck, trump excluded)
+bool PlayerCheatTop(GameState* game, int hand_index, Card* out_old_card, Card* out_new_card);       // Tutorial-only: deterministic swap with deck top
 void EndRound(GameState* game);
 
 // Helper functions

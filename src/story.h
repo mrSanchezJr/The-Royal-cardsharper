@@ -38,8 +38,13 @@ const char* GetKingComment(KingEvent event, Language lang);
 const char* GetIntroDialogueText(int step, Language lang);
 const char* GetTutorialStepText(int step, Language lang);
 const char* GetEpilogueText(Language lang);
+const char* GetEpilogueStepText(int step, Language lang);
 const char* GetCaughtText(Language lang);
 const char* GetCreditsText(Language lang);
+const char* GetFinalCreditsText(Language lang);
+const char* GetAnnouncementLatinText(void);
+const char* GetAnnouncementDialogText(Language lang);
+const char* GetAnnouncementDialogPart(int part, Language lang);
 
 int GetDistractionCount(void);
 const char* GetDistractionText(int index, Language lang);

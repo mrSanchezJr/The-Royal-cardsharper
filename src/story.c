@@ -88,6 +88,9 @@ const char* GetUIText(const char* key, Language lang) {
         if (lang == LANG_EN) return "LANGUAGE: ENGLISH";
         return "ЯЗЫК: РУССКИЙ";
     }
+    if (strcmp(key, "ESC_EXIT_HINT") == 0) {
+        return (lang == LANG_EN) ? "ESC to Exit" : "ESC — выход";
+    }
     if (strcmp(key, "TRUMP_HEADER") == 0) {
         return (lang == LANG_EN) ? "TRUMP" : "КОЗЫРЬ";
     }
@@ -102,9 +105,9 @@ const char* GetUIText(const char* key, Language lang) {
     }
     if (strcmp(key, "WINDOW_SIZE_640")  == 0) { return (lang == LANG_EN) ? "WINDOW: 640 x 360"  : "ОКНО: 640 x 360";  }
     if (strcmp(key, "WINDOW_SIZE_960")  == 0) { return (lang == LANG_EN) ? "WINDOW: 960 x 540"  : "ОКНО: 960 x 540";  }
-    if (strcmp(key, "WINDOW_SIZE_1280") == 0) { return (lang == LANG_EN) ? "WINDOW: 1280 x 720"  : "ОКНО: 1280 x 720 (по умолч.)"; }
+    if (strcmp(key, "WINDOW_SIZE_1280") == 0) { return (lang == LANG_EN) ? "WINDOW: 1280 x 720"  : "ОКНО: 1280 x 720"; }
     if (strcmp(key, "WINDOW_SIZE_1366") == 0) { return (lang == LANG_EN) ? "WINDOW: 1366 x 768"  : "ОКНО: 1366 x 768"; }
-    if (strcmp(key, "WINDOW_SIZE_1600") == 0) { return (lang == LANG_EN) ? "WINDOW: 1600 x 900"  : "ОКНО: 1600 x 900"; }
+    if (strcmp(key, "WINDOW_SIZE_1600") == 0) { return (lang == LANG_EN) ? "WINDOW: 1600 x 900 (default)" : "ОКНО: 1600 x 900 (по умолч.)"; }
     if (strcmp(key, "WINDOW_SIZE_1920") == 0) { return (lang == LANG_EN) ? "WINDOW: 1920 x 1080" : "ОКНО: 1920 x 1080"; }
     if (strcmp(key, "CREDITS") == 0) {
         if (lang == LANG_EN) return "CREDITS";
@@ -290,18 +293,114 @@ const char* GetKingComment(KingEvent event, Language lang) {
 const char* GetCreditsText(Language lang) {
     if (lang == LANG_EN) {
         return "The Royal Cardshaper\n\n"
-               "Engine: Raylib 5.0 (C99)\n"
-               "Platform: Windows x64\n\n"
-               "Code & AI: Sanchez Jr, Gemeni 3.7\n"
-               "Game Design & Narrative: Rui\n\n"
-               "[ Click or Press SPACE / ESC to Return ]";
+"Programming: Sanchez Jr, Gemeni 3.7\n\n"
+"Game Design: \n    Characters: Neko-tanuki\n    Pixel Art: Rui\n\n"
+"Engine: Raylib 5.0 (C99)\n\n"
+"Music: Muse Spark 1.2\n\n"
+"Platform: Windows x64, Linux\n\n"
+"[ Press SPACE to return ]";
     } else {
         return "The Royal Cardshaper\n\n"
-               "Движок: Raylib 5.0 (C99)\n"
-               "Платформа: Windows x64\n\n"
-               "Код и ИИ: Sanchez Jr, Gemeni 3.7\n"
-               "Геймдизайн и Сюжет: Rui\n\n"
-               "[ Кликните или нажмите ПРОБЕЛ / ESC для возврата ]";
+               "Программирование: Sanchez Jr, Gemeni 3.7\n\n"
+               "Геймдизайн: \n    Персонажи: Neko-tanuki\n    Пиксел-арт: Rui\n\n"
+               "Движок: Raylib 5.0 (C99)\n\n"
+               "Музыка: Muse Spark 1.2\n\n"
+               "Платформа: Windows x64, Linux\n\n"
+               "[ Нажмите ПРОБЕЛ для возврата ]";
+    }
+}
+
+const char* GetFinalCreditsText(Language lang) {
+    if (lang == LANG_EN) {
+       return "The Royal Cardshaper\n\n"
+"Programming: Sanchez Jr, Gemeni 3.7\n\n"
+"Game Design: \n    Characters: Neko-tanuki\n    Pixel Art: Rui\n\n"
+"Engine: Raylib 5.0 (C99)\n\n"
+"Music: Muse Spark 1.2\n\n"
+"Platform: Windows x64, Linux\n\n"
+"Thanks for playing ^_^\n\n"
+"[ Press SPACE to return ]";
+    }
+    else {
+        return 
+        "The Royal Cardshaper\n\n"
+               "Программирование: Sanchez Jr, Gemeni 3.7\n\n"
+               "Геймдизайн: \n    Персонажи: Neko-tanuki\n    Пиксел-арт: Rui\n\n"
+               "Движок: Raylib 5.0 (C99)\n\n"
+               "Музыка: Muse Spark 1.2\n\n"
+               "Платформа: Windows x64, Linux\n\n"
+               "Спасибо за игру ^_^\n\n"
+               "[ Нажмите ПРОБЕЛ для возврата ]";
+    }
+}
+
+const char* GetAnnouncementLatinText(void) {
+    return "Ego, Rex Carduus, omni terrarum orbi denuntio:\n"
+           "Quoniam filia nostra, princeps Ruita, ad vicesimum aetatis annum,\n"
+           "id est maturae aetatis, pervenerit, et maritum expetat,\n"
+           "qui non sit ignavus, sed qui gladiis et cordibus pugnet.\n"
+           "\n"
+           "Quapropter nos, pater et Rex, omnibus gentibus edicimus:\n"
+           "\n"
+           "Quisquis filiam meam et dimidiam regni partem adipisci vult,\n"
+           "in arcem nostram veniat et ad mensam considat.\n"
+           "\n"
+           "Non proelii, non sanguinis causa, sed unius ludi gratia:\n"
+           "\n"
+           "Ludus Stulti.";
+}
+/*
+const char* GetAnnouncementDialogText(Language lang) {
+    if (lang == LANG_EN) {
+        return "I, King Carduus, declare to all the Earth:\n"
+               "\n"
+               "Since our daughter, Princess Ruita, has reached twenty years\n"
+               "— the age of maturity — and desires a husband who is no coward,\n"
+               "but who fights with swords and hearts.\n"
+               "\n"
+               "Therefore we, father and King, proclaim to all peoples:\n"
+               "\n"
+               "Whoever wishes to win my daughter and half the kingdom\n"
+               "— let him come to our castle and sit at the table.\n"
+               "\n"
+               "Not for battle, not for blood — but for the sake of a single game:\n"
+               "\n"
+               "Durak";
+    } else {
+        return "Я, Король Кардуус, объявляю всей Земле:\n"
+               "\n"
+               "Поскольку наша дочь, княжна Руита, уже достигла двадцати лет\n"
+               "— возраста зрелости, — и хочет мужа, который был бы не трусом,\n"
+               "а бился с мечами и сердцами.\n"
+               "\n"
+               "Посему мы, отец и Король, объявляем всем народам:\n"
+               "\n"
+               "Кто хочет получить мою дочь и половину королевства\n"
+               "— тот должен прийти в наш замок и сесть за стол.\n"
+               "\n"
+               "Не ради битвы, не ради крови — а ради единственной игры:\n"
+               "\n"
+               "Дурак";
+    }
+}
+*/
+const char* GetAnnouncementDialogPart(int part, Language lang) {
+    if (lang == LANG_EN) {
+        switch (part) {
+            case 0: return "I, King Carduus, declare to all the Earth:\n\nSince our daughter, Princess Ruita, has reached twenty years — the age of maturity\n — and desires a husband who is no coward, but who fights with swords and hearts.\n[Press SPACE]";
+            case 1: return "Therefore we, father and King, proclaim to all peoples:\nWhoever wishes to win my daughter and half the kingdom...\n\n[Press SPACE]";
+            case 2: return "— let him come to our castle and sit at the table.\n\n\n[Press SPACE]";
+            case 3: return "Not for battle, not for blood — but for the sake of a single game:\nDurak\n\n[Press SPACE]";
+            default: return "";
+        }
+    } else {
+        switch (part) {
+            case 0: return "Я, Король Кардуус, объявляю всей Земле:\n\nПоскольку наша дочь, княжна Руита, уже достигла двадцати лет — возраста зрелости,\n — и хочет мужа, который был бы не трусом, а бился с мечами и сердцами.\n[Нажми ПРОБЕЛ]";
+            case 1: return "Посему мы, отец и Король, объявляем всем народам:\nКто хочет получить мою дочь и половину королевства...\n\n[Нажми ПРОБЕЛ]";
+            case 2: return "— тот должен прийти в наш замок и сесть за стол.\n\n\n[Нажми ПРОБЕЛ]";
+            case 3: return "Не ради битвы, не ради крови — а ради единственной игры:\nДурак\n\n[Нажми ПРОБЕЛ]";
+            default: return "";
+        }
     }
 }
 
@@ -337,10 +436,29 @@ const char* GetDistractionText(int index, Language lang) {
 // Epilogue & Caught Texts (RU, EN)
 // -------------------------------------------------------------
 const char* GetEpilogueText(Language lang) {
+    // Legacy single-text epilogue (kept for compatibility)
+    return GetEpilogueStepText(0, lang);
+}
+
+const char* GetEpilogueStepText(int step, Language lang) {
     if (lang == LANG_EN) {
-        return "You remove your hood. The King gasps.\nYou are a woman!\nThe King frowns, but a royal promise is absolute:\n'I did not specify the suitor must be a man. A deal is a deal...'\n\nCongratulations! You won the Princess and half the kingdom!\n\nCredits:\nCode: Antigravity\nDesign: You\nEngine: Raylib";
+        switch (step) {
+            case 0: return "King: That was masterful — you have bested me. Who are you, wanderer?\nCast off your mantle at last!\n\n[Press SPACE or Click]";
+            case 1: return "";
+            case 2: return "";
+            case 3: return "King: If my eyes do not deceive me, before me stands a maiden!\nHow can I give my daughter to you?\n\n[Press SPACE or Click]";
+            case 4: return "Wanderess: You must, for your decree never stated\nthat a man must best you.\n\n[Press SPACE or Click]";
+            default: return "";
+        }
     } else {
-        return "Ты снимаешь капюшон. Король в шоке.\nПеред ним — девушка!\nКороль хмурится, но слово надо держать:\n'Я не указывал, что претендент должен быть мужчиной. Уговор есть уговор...'\n\nПоздравляем! Ты завоевала принцессу и полцарства!\n\nТитры:\nКод: Antigravity\nДизайн: You\nДвижок: Raylib";
+        switch (step) {
+            case 0: return "Король: Это было виртуозно, ты смог одолеть меня.\nКто же ты есть, странник? Сними наконец же свою мантию!\n\n[Нажми ПРОБЕЛ или Клик]";
+            case 1: return "";
+            case 2: return "";
+            case 3: return "Король: Коль очи мои мне не льстят, предо мной - девушка!\nКак же я могу выдать дочь за тебя?\n\n[Нажми ПРОБЕЛ или Клик]";
+            case 4: return "Странница: Ныне ты должен, ибо указом твоим\nне значилось, что одолеть тебя должен мужчина.\n\n[Нажми ПРОБЕЛ или Клик]";
+            default: return "";
+        }
     }
 }
 
@@ -361,7 +479,6 @@ const char* GetIntroDialogueText(int step, Language lang) {
             case 0: return "King: Who dares enter my hall? Ah, a cloaked stranger...\n\n[Press SPACE or Click]";
             case 1: return "Stranger: I have come to accept your challenge. To test my luck at cards.\n\n[Press SPACE or Click]";
             case 2: return "King: Bold! At stake is my daughter's hand and half the kingdom.\nBut tell me... do you know the rules of DURAK?\n\n[Press SPACE or Click]";
-            case 3: return "King: Hm?\n\n[Press SPACE or Click]";
             default: return "";
         }
     } else {

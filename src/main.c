@@ -35,6 +35,24 @@ static void TriggerKingComment(KingEvent event, Language lang) {
     g_king_comment_timer = 3.5f;
 }
 
+// True if the King has at least one card in hand able to beat `c` right now
+static bool KingCanBeatCard(const GameState* game, Card c) {
+    for (int i = 0; i < game->ai_hand.count; i++) {
+        if (CanDefend(game, c, game->ai_hand.cards[i])) return true;
+    }
+    return false;
+}
+
+typedef struct {
+    Vector2 pos;
+    Vector2 vel;
+    float life;
+    float maxLife;
+    float size;
+    float sway;
+} Heart;
+typedef struct { bool active; float t; Vector2 from, to; Card card; int tableIdx; bool isDef; } CardFlight;
+
 int main(void) {
     // Virtual (logical) canvas size — all game coordinates are in this space (HD+ for quality)
     const int screenWidth  = 1600;
@@ -46,7 +64,7 @@ int main(void) {
     const int RES_COUNT = 6;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(screenWidth, screenHeight, "The Royal Cardshaper");
+    InitWindow(screenWidth, screenHeight, "The Royal Cardshaper (beta)");
     SetWindowMinSize(640, 360);
     SetWindowMaxSize(1920, 1080);
     SetTargetFPS(60);
@@ -59,6 +77,9 @@ int main(void) {
 
     InitRenderFont();
     InitKingSprites();
+    InitWandererSprites();
+    InitPrincessSprite();
+    InitFinalSprite();
     InitTableSprite();
 
     KingState g_king_state = KING_STATE_IDLE;
@@ -75,11 +96,24 @@ int main(void) {
     AppState appState = saveData.first_launch_done ? STATE_MENU : STATE_LANG_SELECT;
     bool showQuitModal = false;
 
-    int introStep = 0;
+    int introStep = -4;
     int tutStep = 0;
+    int epiStep = 0;
+    float epiRevealTimer = 0;
+    float epiFade = 0;
+    float creditsOffset = 0;
+    float creditsSpeed = 42.0f; // adjustable: pixels per second for credits scroll
+    float epilogueEndFade = 0; // fade to black after credits leave screen
+    float introFade = 0; // announcement -> dialogue transition
+    int introFadeDir = 0; // 1 = to black, -1 = from black
+        Vector2 heartEmitA = { screenWidth * 0.26f - 200, screenHeight * 0.88f - 500}; // <-- editable left emitter (image)
+Vector2 heartEmitB = { screenWidth * 0.74f - 700, screenHeight * 0.88f - 500}; // <-- editable right emitter (credits)
+    #define MAX_HEARTS 44
+    Heart hearts[MAX_HEARTS];
+    for (int i = 0; i < MAX_HEARTS; i++) hearts[i].life = -1;
     
     TypewriterText tw;
-    InitTypewriter(&tw, GetIntroDialogueText(0, (Language)saveData.language), 0.03f);
+    InitTypewriter(&tw, GetAnnouncementDialogPart(0, (Language)saveData.language), 0.03f);
 
     GameState game;
     InitGame(&game);
@@ -96,11 +130,14 @@ int main(void) {
     float cheating_progress = 0;
     const float CHEAT_DURATION = 0.8f;
     float end_round_timer = 0;
+    float post_match_timer = 0;
 
     Card swap_old_card = {0}, swap_new_card = {0};
     float swap_notice_timer = 0;
 
     const float cardW = 80, cardH = 118;
+    CardFlight cardFlight = {0};
+    Vector2 prevMousePos = {0};
 
     TriggerKingComment(KING_EVENT_START, (Language)saveData.language);
 
@@ -108,6 +145,23 @@ int main(void) {
         float dt = GetFrameTime();
 
         UpdateGameAudio();
+        UpdateUiBlock(dt);
+        if (cardFlight.active) {
+            cardFlight.t += dt * 4.6f;
+            if (cardFlight.t >= 1.0f) { cardFlight.t = 1.0f; cardFlight.active = false; }
+        }
+        UpdateVictoryParticles(dt);
+        UpdateCursorParticles(dt);
+        {
+            MusicTrack want = MUSIC_MENU;
+            if (appState == STATE_TUTORIAL) want = MUSIC_GAME_CALM;
+            else if (appState == STATE_GAME || appState == STATE_CAUGHT) {
+                if (ai.match_level == 1 || saveData.matches_won == 1) want = MUSIC_DUSK_ROAD;
+                else if (ai.match_level >= 2 || saveData.matches_won >= 2) want = MUSIC_GAME;
+                else want = MUSIC_GAME_CALM;
+            } else if (appState == STATE_EPILOGUE) want = MUSIC_EPILOGUE;
+            SetMusicTrack(want);
+        }
 
         if (g_king_comment_timer > 0) {
             g_king_comment_timer -= dt;
@@ -144,6 +198,16 @@ int main(void) {
             (rawMouse.x - offsetX) / scale,
             (rawMouse.y - offsetY) / scale
         };
+        {
+            float dx = mousePos.x - prevMousePos.x;
+            float dy = mousePos.y - prevMousePos.y;
+            float dist = sqrtf(dx*dx + dy*dy);
+            if (dist > 2.8f) {
+                SpawnCursorDust(mousePos);
+                if (dist > 14) SpawnCursorDust((Vector2){(mousePos.x+prevMousePos.x)*0.5f, (mousePos.y+prevMousePos.y)*0.5f});
+            }
+            prevMousePos = mousePos;
+        }
 
         // Global ESC intercept during game/tutorial
         if (IsKeyPressed(KEY_ESCAPE)) {
@@ -174,14 +238,44 @@ int main(void) {
                     break;
 
                 case STATE_INTRO_DIALOGUE:
+                    if (introFadeDir != 0) {
+                        introFade += dt / 0.55f * introFadeDir;
+                        if (introFadeDir == 1 && introFade >= 1.0f) {
+                            introFade = 1.0f;
+                            introStep = 0;
+                            InitTypewriter(&tw, GetIntroDialogueText(0, (Language)saveData.language), 0.03f);
+                            introFadeDir = -1;
+                        } else if (introFadeDir == -1 && introFade <= 0.0f) {
+                            introFade = 0.0f;
+                            introFadeDir = 0;
+                        }
+                        break;
+                    }
                     UpdateTypewriter(&tw, dt);
                     if (IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                         if (tw.is_finished) {
-                            introStep++;
-                            if (introStep <= 3) {
-                                InitTypewriter(&tw, GetIntroDialogueText(introStep, (Language)saveData.language), 0.03f);
+                            if (introStep < 0) {
+                                if (introStep == -1) {
+                                    introFadeDir = 1;
+                                    introFade = 0.0f;
+                                    BlockUiClicks(0.35f);
+                                } else {
+                                    introStep++;
+                                    InitTypewriter(&tw, GetAnnouncementDialogPart(introStep + 4, (Language)saveData.language), 0.03f);
+                                    BlockUiClicks(0.30f);
+                                }
+                            } else if (introStep <= 3) {
+                                introStep++;
+                                if (introStep <= 2) {
+                                    InitTypewriter(&tw, GetIntroDialogueText(introStep, (Language)saveData.language), 0.03f);
+                                    BlockUiClicks(0.30f);
+                                } else {
+                                    appState = STATE_INTRO_QUESTION;
+                                    BlockUiClicks(0.35f);
+                                }
                             } else {
                                 appState = STATE_INTRO_QUESTION;
+                                BlockUiClicks(0.35f);
                             }
                         } else {
                             FinishTypewriter(&tw);
@@ -209,12 +303,14 @@ int main(void) {
                             if (IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                                 tutStep = 1;
                                 InitTypewriter(&tw, GetTutorialStepText(1, (Language)saveData.language), 0.02f);
+                                BlockUiClicks(0.35f);
                             }
                             break;
                         case 1: // Lesson 2: Suits & Trumps
                             if (IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                                 tutStep = 2;
                                 InitTypewriter(&tw, GetTutorialStepText(2, (Language)saveData.language), 0.02f);
+                                BlockUiClicks(0.35f);
                             }
                             break;
                         case 2: // Lesson 3: Live Attack Practice
@@ -251,6 +347,12 @@ int main(void) {
                                             }
                                             tutStep = 3;
                                             InitTypewriter(&tw, GetTutorialStepText(3, (Language)saveData.language), 0.02f);
+                                            {
+                                                Vector2 from = {r.x + cardW/2, r.y + cardH/2};
+                                                float tX = screenWidth/2.0f - (game.table_count*100)/2.0f + (game.table_count-1)*100 + cardW/2;
+                                                Vector2 to = {tX, screenHeight/2.0f + 95 + cardH/2};
+                                                cardFlight = (CardFlight){true, 0, from, to, game.table[game.table_count-1].attacking_card, game.table_count-1, false};
+                                            }
                                         } else {
                                             GetInvalidAttackReason(game.player_hand.cards[i], &game, (Language)saveData.language, g_invalid_move_text, sizeof(g_invalid_move_text));
                                             g_invalid_move_timer = 4.0f;
@@ -265,6 +367,7 @@ int main(void) {
                                 EndRound(&game);
                                 tutStep = 4;
                                 InitTypewriter(&tw, GetTutorialStepText(4, (Language)saveData.language), 0.02f);
+                                BlockUiClicks(0.35f);
                                 
                                 // Set King counter-attack card for Defense Lesson
                                 game.is_player_turn = false;
@@ -297,6 +400,12 @@ int main(void) {
                                             PlayGameSfx(SFX_CARD_PLAY);
                                             tutStep = 5;
                                             InitTypewriter(&tw, GetTutorialStepText(5, (Language)saveData.language), 0.02f);
+                                            {
+                                                Vector2 from = {r.x + cardW/2, r.y + cardH/2};
+                                                float tX = screenWidth/2.0f - (game.table_count*100)/2.0f + 0*100 + 16 + cardW/2;
+                                                Vector2 to = {tX, screenHeight/2.0f + 125 + cardH/2};
+                                                cardFlight = (CardFlight){true, 0, from, to, game.table[0].defending_card, 0, true};
+                                            }
                                         } else {
                                             GetInvalidDefenseReason(game.table[0].attacking_card, game.player_hand.cards[i], game.trump_card.suit, (Language)saveData.language, g_invalid_move_text, sizeof(g_invalid_move_text));
                                             g_invalid_move_timer = 4.0f;
@@ -311,6 +420,7 @@ int main(void) {
                                 EndRound(&game);
                                 tutStep = 6;
                                 InitTypewriter(&tw, GetTutorialStepText(6, (Language)saveData.language), 0.02f);
+                                BlockUiClicks(0.35f);
                                 ai.is_looking_away = true;
                                 ai.look_away_timer = 999.0f;
                                 ai.distraction_index = GetDistractionCount() - 1;
@@ -337,7 +447,7 @@ int main(void) {
                             if (is_cheating) {
                                 cheating_progress += dt;
                                 if (cheating_progress >= CHEAT_DURATION) {
-                                    PlayerCheatSpecific(&game, selected_cheat_hand_index, &swap_old_card, &swap_new_card);
+                                    PlayerCheatTop(&game, selected_cheat_hand_index, &swap_old_card, &swap_new_card);
                                     PlayGameSfx(SFX_CHEAT_SWAP);
                                     swap_notice_timer = 3.5f;
                                     is_cheating = false;
@@ -355,13 +465,26 @@ int main(void) {
                                 SaveSaveData(&saveData);
                                 InitGame(&game);
                                 InitAI(&ai, saveData.matches_won < 2 ? saveData.matches_won : 2, saveData.ai_difficulty);
+                                g_king_state = KING_STATE_IDLE;
                                 TriggerKingComment(KING_EVENT_START, (Language)saveData.language);
+                                BlockUiClicks(0.35f);
                             }
                             break;
                     }
                     break;
 
                 case STATE_GAME:
+                    // Match transition pause: show the overwhelmed King briefly
+                    if (post_match_timer > 0) {
+                        post_match_timer -= dt;
+                        if (post_match_timer <= 0) {
+                            InitGame(&game);
+                            InitAI(&ai, saveData.matches_won < 2 ? saveData.matches_won : 2, saveData.ai_difficulty);
+                            g_king_state = KING_STATE_IDLE;
+                        }
+                        break;
+                    }
+
                     UpdateAILooking(&ai, dt);
 
                     if (IsKeyPressed(KEY_H)) {
@@ -379,24 +502,33 @@ int main(void) {
                             int winState = CheckWinCondition(&game);
                             if (winState != 0) {
                                 if (winState == 1) { // Player won
-                                    saveData.matches_won++;
+                                    if (saveData.matches_won < 3) saveData.matches_won++;
+                                    if (saveData.matches_won > 3) saveData.matches_won = 3;
                                     SaveSaveData(&saveData);
                                     TriggerKingComment(KING_EVENT_WIN, (Language)saveData.language);
                                     g_king_state = KING_STATE_OVERWHELMED; // King lost — show overwhelmed sprite
+                                    ai.is_looking_away = false; // He turns back, shocked
+                                    ai.look_away_timer = 0;
+                                    SpawnVictoryParticles((Vector2){screenWidth/2, 300});
                                     if (saveData.matches_won >= 3) {
                                         appState = STATE_EPILOGUE;
-                                        InitTypewriter(&tw, GetEpilogueText((Language)saveData.language), 0.03f);
+                                        epiStep = 0;
+                                        epiRevealTimer = 0;
+                                        epiFade = 0;
+                                        creditsOffset = 0;
+                                        epilogueEndFade = 0;
+                                        for (int i = 0; i < MAX_HEARTS; i++) hearts[i].life = -1;
+                                        InitTypewriter(&tw, GetEpilogueStepText(0, (Language)saveData.language), 0.03f);
                                     } else {
-                                        InitGame(&game);
-                                        InitAI(&ai, saveData.matches_won < 2 ? saveData.matches_won : 2, saveData.ai_difficulty);
+                                        // Brief pause so the player sees the overwhelmed King,
+                                        // then the next match starts with the idle sprite
+                                        post_match_timer = 1.8f;
                                     }
-                                } else { // AI won or draw
-                                    saveData.matches_won = 0;
-                                    SaveSaveData(&saveData);
+                                } else { // AI won or draw — restart only the CURRENT match
                                     TriggerKingComment(KING_EVENT_LOSS, (Language)saveData.language);
                                     g_king_state = KING_STATE_IDLE; // King won — back to idle
                                     InitGame(&game);
-                                    InitAI(&ai, 0, saveData.ai_difficulty);
+                                    InitAI(&ai, saveData.matches_won < 2 ? saveData.matches_won : 2, saveData.ai_difficulty);
                                 }
                             }
                         }
@@ -454,6 +586,12 @@ int main(void) {
                                             if (PlayerAttack(&game, i)) {
                                                 PlayGameSfx(SFX_CARD_PLAY);
                                                 TriggerKingComment(KING_EVENT_PLAYER_ATTACK, (Language)saveData.language);
+                                                {
+                                                    Vector2 from = {r.x + cardW/2, r.y + cardH/2};
+                                                    float tX = screenWidth/2.0f - (game.table_count*100)/2.0f + (game.table_count-1)*100 + cardW/2;
+                                                    Vector2 to = {tX, screenHeight/2.0f + 95 + cardH/2};
+                                                    cardFlight = (CardFlight){true, 0, from, to, game.table[game.table_count-1].attacking_card, game.table_count-1, false};
+                                                }
                                                 }
                                             } else {
                                                 GetInvalidAttackReason(game.player_hand.cards[i], &game, (Language)saveData.language, g_invalid_move_text, sizeof(g_invalid_move_text));
@@ -478,6 +616,12 @@ int main(void) {
                                                     if (PlayerDefend(&game, i, t)) {
                                                         PlayGameSfx(SFX_CARD_PLAY);
                                                         TriggerKingComment(KING_EVENT_PLAYER_DEFEND, (Language)saveData.language);
+                                                        {
+                                                            Vector2 from = {r.x + cardW/2, r.y + cardH/2};
+                                                            float tableStartX = screenWidth/2.0f - (game.table_count*100)/2.0f;
+                                                            Vector2 to = {tableStartX + t*100 + 16 + cardW/2, screenHeight/2.0f + 125 + cardH/2};
+                                                            cardFlight = (CardFlight){true, 0, from, to, game.table[t].defending_card, t, true};
+                                                        }
                                                         defendedAny = true;
                                                         break;
                                                     } else {
@@ -501,7 +645,25 @@ int main(void) {
                             static float ai_timer = 0;
                             ai_timer += dt;
                             if (ai_timer > 0.8f) {
+                                int _prevCnt = game.table_count;
+                                bool _prevDef[6] = {0};
+                                for (int _i=0; _i<_prevCnt; _i++) _prevDef[_i]=game.table[_i].has_defender;
                                 AITakeTurn(&game, saveData.ai_difficulty);
+                                if (game.table_count > _prevCnt) {
+                                    int idx = game.table_count-1;
+                                    Vector2 from = {screenWidth/2, 380};
+                                    float tX = screenWidth/2.0f - (game.table_count*100)/2.0f + idx*100 + cardW/2;
+                                    Vector2 to = {tX, screenHeight/2.0f + 95 + cardH/2};
+                                    cardFlight = (CardFlight){true, 0, from, to, game.table[idx].attacking_card, idx, false};
+                                } else {
+                                    for (int _t=0; _t<game.table_count; _t++) if (!_prevDef[_t] && game.table[_t].has_defender) {
+                                        Vector2 from = {screenWidth/2, 380};
+                                        float tX = screenWidth/2.0f - (game.table_count*100)/2.0f + _t*100 + 16 + cardW/2;
+                                        Vector2 to = {tX, screenHeight/2.0f + 125 + cardH/2};
+                                        cardFlight = (CardFlight){true, 0, from, to, game.table[_t].defending_card, _t, true};
+                                        break;
+                                    }
+                                }
                                 ai_timer = 0;
                             }
                         } else if (game.is_player_turn && !is_cheating && !is_selecting_cheat_card) {
@@ -516,7 +678,17 @@ int main(void) {
                                     }
                                 }
                                 if (needs_defense) {
+                                    int _prevCnt = game.table_count;
+                                    bool _prevDef[6] = {0};
+                                    for (int _i=0; _i<_prevCnt; _i++) _prevDef[_i]=game.table[_i].has_defender;
                                     AITakeTurn(&game, saveData.ai_difficulty);
+                                    for (int _t=0; _t<game.table_count; _t++) if (!_prevDef[_t] && game.table[_t].has_defender) {
+                                        Vector2 from = {screenWidth/2, 380};
+                                        float tX = screenWidth/2.0f - (game.table_count*100)/2.0f + _t*100 + 16 + cardW/2;
+                                        Vector2 to = {tX, screenHeight/2.0f + 125 + cardH/2};
+                                        cardFlight = (CardFlight){true, 0, from, to, game.table[_t].defending_card, _t, true};
+                                        break;
+                                    }
                                 }
                                 ai_defend_timer = 0;
                             }
@@ -537,12 +709,13 @@ int main(void) {
                     if (IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                         if (tw.is_finished) {
                             appState = STATE_MENU;
-                            saveData.matches_won = 0;
-                            SaveSaveData(&saveData);
+                            // Caught: restart only the CURRENT match, campaign progress is kept
                             InitGame(&game);
-                            InitAI(&ai, 0, saveData.ai_difficulty);
+                            InitAI(&ai, saveData.matches_won < 2 ? saveData.matches_won : 2, saveData.ai_difficulty);
+                            g_king_state = KING_STATE_IDLE;
                             is_cheating = false;
                             is_selecting_cheat_card = false;
+                            BlockUiClicks(0.35f);
                         } else {
                             FinishTypewriter(&tw);
                         }
@@ -550,12 +723,110 @@ int main(void) {
                     break;
 
                 case STATE_EPILOGUE:
+                    if (epiStep == 1) {
+                        epiRevealTimer -= dt;
+                        if (epiRevealTimer <= 0) {
+                            epiStep = 2;
+                            epiRevealTimer = 1.5f;
+                        }
+                        break;
+                    }
+                    if (epiStep == 2) {
+                        epiRevealTimer -= dt;
+                        if (epiRevealTimer <= 0) {
+                            epiStep = 3;
+                            InitTypewriter(&tw, GetEpilogueStepText(3, (Language)saveData.language), 0.03f);
+                        }
+                        break;
+                    }
+                    if (epiStep == 5) {
+                        epiFade += dt / 1.2f;
+                        if (epiFade > 1) epiFade = 1;
+                        creditsOffset += dt * creditsSpeed * 0.3f;
+                        for (int i = 0; i < MAX_HEARTS; i++) {
+                            if (hearts[i].life <= 0 && GetRandomValue(0, 100) < 12) {
+                                bool isA = GetRandomValue(0,1)==0;
+                                Vector2 emit = isA ? heartEmitA : heartEmitB;
+                                hearts[i].pos = emit;
+                                hearts[i].pos.x += GetRandomValue(-18, 18);
+                                float vx = isA ? GetRandomValue(5, 28)/10.0f : GetRandomValue(-28, -5)/10.0f; // different directions
+                                hearts[i].vel = (Vector2){ vx, - (GetRandomValue(55, 95)) };
+                                hearts[i].maxLife = GetRandomValue(28, 42)/10.0f;
+                                hearts[i].life = hearts[i].maxLife;
+                                hearts[i].size = GetRandomValue(10, 18);
+                                hearts[i].sway = GetRandomValue(0, 628)/100.0f;
+                            }
+                            if (hearts[i].life > 0) {
+                                hearts[i].life -= dt;
+                                hearts[i].pos.x += hearts[i].vel.x * dt + sinf(hearts[i].life*2.2f + hearts[i].sway)*8.0f*dt;
+                                hearts[i].pos.y += hearts[i].vel.y * dt;
+                            }
+                        }
+                        if (epiFade >= 1.0f) {
+                            epiStep = 6;
+                        }
+                        break;
+                    }
+                    if (epiStep == 6) {
+                        creditsOffset += dt * creditsSpeed;
+                        for (int i = 0; i < MAX_HEARTS; i++) {
+                            if (hearts[i].life <= 0 && GetRandomValue(0, 100) < 10) {
+                                bool isA = GetRandomValue(0,1)==0;
+                                Vector2 emit = isA ? heartEmitA : heartEmitB;
+                                hearts[i].pos = emit;
+                                hearts[i].pos.x += GetRandomValue(-20, 20);
+                                float vx = isA ? GetRandomValue(4, 30)/10.0f : GetRandomValue(-30, -4)/10.0f; // different directions
+                                hearts[i].vel = (Vector2){ vx, - (GetRandomValue(60, 105)) };
+                                hearts[i].maxLife = GetRandomValue(30, 44)/10.0f;
+                                hearts[i].life = hearts[i].maxLife;
+                                hearts[i].size = GetRandomValue(11, 19);
+                                hearts[i].sway = GetRandomValue(0, 628)/100.0f;
+                            }
+                            if (hearts[i].life > 0) {
+                                hearts[i].life -= dt;
+                                hearts[i].pos.x += hearts[i].vel.x * dt + sinf(hearts[i].life*2.0f + hearts[i].sway)*10.0f*dt;
+                                hearts[i].pos.y += hearts[i].vel.y * dt;
+                            }
+                        }
+                        // Auto transition when credits fully leave screen
+                        {
+                            const char* cred = GetFinalCreditsText((Language)saveData.language);
+                            Vector2 csz = MeasureAppText(cred, 28);
+                            float startY = screenHeight * 0.5f;
+                            float y = startY - creditsOffset;
+                            if (y + csz.y < -60) {
+                                epilogueEndFade += dt / 1.0f;
+                                if (epilogueEndFade >= 1.0f) {
+                                    appState = STATE_MENU;
+                                    epilogueEndFade = 0;
+                                    BlockUiClicks(0.35f);
+                                }
+                            }
+                        }
+                        if (IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                            appState = STATE_MENU;
+                            epilogueEndFade = 0;
+                            BlockUiClicks(0.35f);
+                        }
+                        break;
+                    }
                     UpdateTypewriter(&tw, dt);
                     if (IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                        if (tw.is_finished) {
-                            appState = STATE_MENU;
-                        } else {
+                        if (!tw.is_finished) {
                             FinishTypewriter(&tw);
+                        } else {
+                            if (epiStep == 0) {
+                                epiStep = 1;
+                                epiRevealTimer = 1.0f;
+                            } else if (epiStep == 3) {
+                                epiStep = 4;
+                                InitTypewriter(&tw, GetEpilogueStepText(4, (Language)saveData.language), 0.03f);
+                            } else if (epiStep == 4) {
+                                epiStep = 5;
+                                epiFade = 0;
+                                creditsOffset = 0;
+                                for (int i = 0; i < MAX_HEARTS; i++) hearts[i].life = -1;
+                            }
                         }
                     }
                     break;
@@ -563,6 +834,7 @@ int main(void) {
                 case STATE_CREDITS:
                     if (IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                         appState = STATE_MENU;
+                        BlockUiClicks(0.35f);
                     }
                     break;
             }
@@ -628,7 +900,18 @@ int main(void) {
                 Rectangle rCont = {btnX, startY, btnW, btnH};
                 bool hCont = CheckCollisionPointRec(mousePos, rCont);
                 if (DrawMenuButton(rCont, GetUIText("CONTINUE", (Language)saveData.language), hCont, (Color){42, 33, 22, 235}, (Color){82, 63, 36, 250})) {
-                    appState = STATE_GAME;
+                    if (saveData.matches_won >= 3) {
+                        appState = STATE_EPILOGUE;
+                        epiStep = 0;
+                        epiRevealTimer = 0;
+                        epiFade = 0;
+                        creditsOffset = 0;
+                        epilogueEndFade = 0;
+                        for (int i = 0; i < MAX_HEARTS; i++) hearts[i].life = -1;
+                        InitTypewriter(&tw, GetEpilogueStepText(0, (Language)saveData.language), 0.03f);
+                    } else {
+                        appState = STATE_GAME;
+                    }
                 }
                 startY += 66;
             }
@@ -643,8 +926,8 @@ int main(void) {
                 InitAI(&ai, 0, saveData.ai_difficulty);
                 g_king_state = KING_STATE_IDLE; // Reset king appearance for fresh game
                 appState = STATE_INTRO_DIALOGUE;
-                introStep = 0;
-                InitTypewriter(&tw, GetIntroDialogueText(0, (Language)saveData.language), 0.03f);
+                introStep = -4;
+                InitTypewriter(&tw, GetAnnouncementDialogPart(0, (Language)saveData.language), 0.03f);
             }
             startY += 66;
 
@@ -680,6 +963,11 @@ int main(void) {
             bool hExit = CheckCollisionPointRec(mousePos, rExit);
             if (DrawMenuButton(rExit, GetUIText("EXIT_GAME", (Language)saveData.language), hExit, (Color){80, 30, 30, 230}, (Color){140, 50, 50, 250})) {
                 CloseGameAudio();
+                UnloadKingSprites();
+                UnloadWandererSprites();
+                UnloadPrincessSprite();
+                UnloadFinalSprite();
+                UnloadTableSprite();
                 UnloadRenderFont();
                 CloseWindow();
                 return 0;
@@ -840,7 +1128,7 @@ int main(void) {
                         (*pVol)++;
                         SaveSaveData(&saveData);
                         ApplyAudioVolumes(saveData.music_volume / 10.0f, saveData.sfx_volume / 10.0f);
-                        if (volRow == 1) PlayGameSfx(SFX_CARD_PLAY);
+                        //if (volRow == 1) PlayGameSfx(SFX_CARD_PLAY);
                     }
                 }
 
@@ -868,6 +1156,113 @@ int main(void) {
 
             const char* credInfo = GetCreditsText((Language)saveData.language);
             DrawAppText(credInfo, screenWidth/2.0f - 240, 190, 22, WHITE);
+        }
+        else if (appState == STATE_INTRO_DIALOGUE) {
+            DrawMenuBackground(screenWidth, screenHeight);
+            if (introStep < 0) {
+                // Announcement in paper style — less wide, more elegant
+                float annW = 1120;
+                float annH = 360;
+                Rectangle annBox = { (screenWidth - annW)/2, 75, annW, annH };
+                DrawPaperPanel(annBox);
+                const char* latin = GetAnnouncementLatinText();
+                DrawAppText(latin, annBox.x + 24, annBox.y + 18, 19, (Color){58, 42, 28, 255});
+                Rectangle princessRect = { annBox.x + annBox.width * 0.67f + 6, annBox.y + 14, annBox.width * 0.33f - 12, annBox.height - 28 };
+                DrawPrincess(princessRect, WHITE);
+            } else {
+                bool isKingSpeaking = (introStep != 1);
+                Rectangle kingRect = { screenWidth * 0.25f +100, 249, 100, 100 };
+                Rectangle wanRect  = { screenWidth * 0.75f - 190, 249, 100, 100 };
+                DrawKingTinted(kingRect, false, KING_STATE_IDLE, isKingSpeaking ? WHITE : (Color){70, 70, 70, 255});
+                DrawWanderer(wanRect, isKingSpeaking ? (Color){70, 70, 70, 255} : WHITE);
+            }
+        }
+        else if (appState == STATE_EPILOGUE) {
+            if (epiStep >= 5) {
+                DrawMenuBackground(screenWidth, screenHeight);
+                float fade = epiFade;
+                if (epiStep == 6) fade = 1.0f;
+                // Hearts behind credits behind image
+                for (int i = 0; i < MAX_HEARTS; i++) if (hearts[i].life > 0) {
+                    float a = hearts[i].life / hearts[i].maxLife;
+                    float alpha = a * (epiStep == 5 ? fade * 0.85f : 0.9f);
+                    Color pink = { 255, 110, 180, (unsigned char)(alpha * 255) };
+                    Color hi   = { 255, 210, 230, (unsigned char)(alpha * 200) };
+                    DrawHeart(hearts[i].pos, hearts[i].size, pink);
+                    DrawHeart((Vector2){hearts[i].pos.x, hearts[i].pos.y - 1}, hearts[i].size*0.45f, hi);
+                }
+                // Credits behind image, in front of hearts — separate final credits
+                // Editable: font size and colors, startY = spawn at screen center
+                // Imaginary line at center: credits clipped below y = screenHeight*0.5
+                {
+                    const char* cred = GetFinalCreditsText((Language)saveData.language);
+                    float credAlpha = (epiStep == 5) ? fade * 0.85f : 1.0f;
+                    float creditsFontSize = 28.0f; // <-- editable: size
+                    float startY = screenHeight * 0.5f; // <-- editable: spawn at center line
+                    float y = startY - creditsOffset;
+                    Vector2 csz = MeasureAppText(cred, creditsFontSize);
+                    // Right side to avoid image (image is left 42..778)
+                    float rightAreaX = screenWidth * 0.52f; // <-- editable right area start
+                    float rightAreaW = screenWidth * 0.46f; // <-- editable right area width
+                    float x = rightAreaX + (rightAreaW - csz.x) * 0.5f;
+                    // Clip below center line — text emerges from center upward
+                    BeginScissorMode(0, 0, screenWidth, screenHeight/2);
+                    // Gold, highly visible (no panel per request)
+                    DrawAppText(cred, x+1.8f, y+2.5f, creditsFontSize, Fade((Color){0,0,0,255}, credAlpha*0.75f));
+                    DrawAppText(cred, x, y, creditsFontSize, Fade(GOLD, credAlpha));
+                    // Inner highlight
+                    DrawAppText(cred, x+0.6f, y+0.6f, creditsFontSize, Fade(ROYAL_PARCHMENT, credAlpha*0.35f));
+                    EndScissorMode();
+                    // Optional: faint center line for debug — uncomment if needed
+                    // DrawLine(0, screenHeight/2, screenWidth, screenHeight/2, Fade(GOLD, 0.18f));
+                }
+                // Final image in front
+                DrawFinalImageCentered(screenWidth, screenHeight, fade);
+                // Fading characters and dialogue box during step 5
+                if (epiStep == 5) {
+                    float charAlpha = 1.0f - fade;
+                    Rectangle kingRect = { screenWidth * 0.25f +100, 249, 100, 100 };
+                    Rectangle wanRect  = { screenWidth * 0.75f - 190, 249, 100, 100 };
+                    DrawKingTinted(kingRect, false, KING_STATE_OVERWHELMED, Fade((Color){70,70,70,255}, charAlpha));
+                    DrawWandererEx(wanRect, false, Fade(WHITE, charAlpha));
+                    // Fading dialogue box
+                    float boxW = 880, boxH = 150;
+                    Rectangle box = { screenWidth/2.0f - boxW/2.0f, 500, boxW, boxH };
+                    // Draw panel with faded alpha by overlaying dark
+                    DrawRoyalPanel(box, Fade(GOLD, charAlpha));
+                    char buffer[2048] = {0};
+                    strncpy(buffer, tw.text, tw.current_len);
+                    DrawAppText(buffer, box.x + 25 + 1.0f, box.y + 20 + 1.5f, 22, Fade((Color){0,0,0,255}, charAlpha*0.6f));
+                    DrawAppText(buffer, box.x + 25, box.y + 20, 22, Fade(WHITE, charAlpha));
+                    DrawRectangleRounded(box, 0.1f, 10, Fade((Color){0,0,0,255}, fade * 90));
+                }
+                if (epilogueEndFade > 0) {
+                    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, epilogueEndFade));
+                }
+            } else {
+                DrawMenuBackground(screenWidth, screenHeight);
+                KingState epiKingState = (epiStep >= 3) ? KING_STATE_OVERWHELMED : KING_STATE_IDLE;
+                bool epiWandererHooded = (epiStep == 0 || epiStep == 1);
+                Color kingTint, wanTint;
+                if (epiStep == 1 || epiStep == 2) {
+                    kingTint = (Color){70, 70, 70, 255};
+                    wanTint = WHITE;
+                } else {
+                    bool epiKingSpeaking = (epiStep == 0 || epiStep == 3);
+                    bool epiWanSpeaking = (epiStep == 4);
+                    kingTint = epiKingSpeaking ? WHITE : (Color){70, 70, 70, 255};
+                    wanTint = epiWanSpeaking ? WHITE : (Color){70, 70, 70, 255};
+                }
+                Rectangle kingRect = { screenWidth * 0.25f +100, 249, 100, 100 };
+                Rectangle wanRect  = { screenWidth * 0.75f - 190, 249, 100, 100 };
+                DrawKingTinted(kingRect, false, epiKingState, kingTint);
+                DrawWandererEx(wanRect, epiWandererHooded, wanTint);
+                if (epiStep == 2) {
+                    float elapsed = 1.5f - epiRevealTimer;
+                    float p = elapsed / 0.65f;
+                    if (p >= 0.0f && p <= 1.0f) DrawWandererRevealEffect(wanRect, p);
+                }
+            }
         }
         else if (appState == STATE_INTRO_QUESTION) {
             DrawTableTexture(screenWidth, screenHeight);
@@ -902,6 +1297,13 @@ int main(void) {
         }
         else if (appState == STATE_GAME || appState == STATE_CAUGHT || appState == STATE_TUTORIAL) {
             DrawTableTexture(screenWidth, screenHeight);
+
+            // "ESC to Exit" hint in the top-left corner during gameplay
+            if (appState == STATE_GAME) {
+                const char* escTxt = GetUIText("ESC_EXIT_HINT", (Language)saveData.language);
+                DrawAppText(escTxt, 21.0f, 16.0f, 18, (Color){0, 0, 0, 160});
+                DrawAppText(escTxt, 20.0f, 15.0f, 18, (Color){215, 210, 195, 175});
+            }
 
             // Draw King
             Rectangle kingRect = {screenWidth / 2.0f - 50, 219, 100, 100};
@@ -1027,13 +1429,27 @@ for (int i = 0; i < aiCount; i++) {
             // Draw Table Cards (Centered at y: 340)
             float tableStartX = screenWidth / 2.0f - (game.table_count * 100) / 2.0f;
             for (int i = 0; i < game.table_count; i++) {
-                Rectangle rAtt = {tableStartX + i * 100, screenHeight / 2.0f + 95, cardW, cardH};
-                DrawCard(game.table[i].attacking_card, rAtt, true);
-                if (game.table[i].has_defender) {
+                bool isFlyingAtt = cardFlight.active && cardFlight.tableIdx==i && !cardFlight.isDef;
+                bool isFlyingDef = cardFlight.active && cardFlight.tableIdx==i && cardFlight.isDef;
+                if (!isFlyingAtt) {
+                    Rectangle rAtt = {tableStartX + i * 100, screenHeight / 2.0f + 95, cardW, cardH};
+                    DrawCard(game.table[i].attacking_card, rAtt, true);
+                }
+                if (game.table[i].has_defender && !isFlyingDef) {
                     Rectangle rDef = {tableStartX + i * 100 + 16, screenHeight / 2.0f + 125, cardW, cardH};
                     DrawCard(game.table[i].defending_card, rDef, true);
                 }
             }
+            if (cardFlight.active) {
+                float e = EaseOutCubic(cardFlight.t);
+                Vector2 p = { cardFlight.from.x + (cardFlight.to.x - cardFlight.from.x)*e,
+                              cardFlight.from.y + (cardFlight.to.y - cardFlight.from.y)*e - sinf(e*PI)*28.0f };
+                float scl = 1.0f + 0.09f * sinf(e*PI);
+                Rectangle r = { p.x - cardW*scl/2, p.y - cardH*scl/2, cardW*scl, cardH*scl };
+                DrawRectangleRounded((Rectangle){r.x+5, r.y+7, r.width, r.height}, 0.08f, 10, Fade(BLACK, 0.22f));
+                DrawCard(cardFlight.card, r, true);
+            }
+            DrawVictoryParticles();
 
             // Draw Round End Banner (Бито / Забрал)
             if (end_round_timer > 0) {
@@ -1057,7 +1473,17 @@ for (int i = 0; i < aiCount; i++) {
             float startX = screenWidth / 2.0f - (game.player_hand.count * 90) / 2.0f;
             for (int i = 0; i < game.player_hand.count; i++) {
                 Rectangle r = {startX + i * 90, screenHeight - 165, cardW, cardH};
+                bool hovered = CheckCollisionPointRec(mousePos, r) && !is_selecting_cheat_card && !is_cheating && (appState==STATE_GAME || appState==STATE_TUTORIAL) && end_round_timer<=0 && !game.round_over && !cardFlight.active;
+                if (hovered) {
+                    r.y -= 14;
+                    r.x -= 4;
+                    r.width += 8;
+                    r.height += 8;
+                    r.y += sinf(GetTime()*3.8f + i*0.9f)*1.6f;
+                    r.x += sinf(GetTime()*2.2f + i*1.1f)*1.0f;
+                }
                 DrawCard(game.player_hand.cards[i], r, true);
+                if (hovered) DrawCardHighlight(r, Fade(GOLD, 0.55f));
 
                 if (is_selecting_cheat_card) {
                     DrawCardHighlight(r, GOLD);
@@ -1081,17 +1507,41 @@ for (int i = 0; i < aiCount; i++) {
             // Level 1 Tactical Hints above Player Cards
             if (appState == STATE_GAME && saveData.matches_won == 0 && end_round_timer <= 0 && !is_selecting_cheat_card && !is_cheating) {
                 if (game.is_player_turn) {
+                    bool endgameRule = (game.deck.count == 0 && game.ai_hand.count < game.player_hand.count);
+
                     if (game.table_count == 0) {
                         int minNonTrumpRank = 999;
                         int bestIdx = -1;
+                        int unbeatableNT = -1, unbeatableNTRank = 999;
+                        int unbeatableT  = -1, unbeatableTRank  = 999;
+
                         for (int k = 0; k < game.player_hand.count; k++) {
-                            if (game.player_hand.cards[k].suit != game.trump_card.suit) {
-                                if (game.player_hand.cards[k].rank < minNonTrumpRank) {
-                                    minNonTrumpRank = game.player_hand.cards[k].rank;
-                                    bestIdx = k;
+                            Card pc = game.player_hand.cards[k];
+                            bool isTrump = (pc.suit == game.trump_card.suit);
+                            if (!isTrump && pc.rank < minNonTrumpRank) {
+                                minNonTrumpRank = pc.rank;
+                                bestIdx = k;
+                            }
+                            if (endgameRule && !KingCanBeatCard(&game, pc)) {
+                                if (!isTrump && pc.rank < unbeatableNTRank) {
+                                    unbeatableNTRank = pc.rank;
+                                    unbeatableNT = k;
+                                }
+                                if (isTrump && pc.rank < unbeatableTRank) {
+                                    unbeatableTRank = pc.rank;
+                                    unbeatableT = k;
                                 }
                             }
                         }
+
+                        // Endgame rule: deck empty & King holds fewer cards ->
+                        // prefer a card he cannot beat (he takes it and runs out)
+                        if (endgameRule) {
+                            bestIdx = (unbeatableNT != -1) ? unbeatableNT
+                                    : (unbeatableT  != -1) ? unbeatableT
+                                    : bestIdx;
+                        }
+
                         for (int i = 0; i < game.player_hand.count; i++) {
                             Rectangle r = {startX + i * 90, screenHeight - 165, cardW, cardH};
                             Vector2 topCenter = {r.x + cardW / 2.0f, r.y};
@@ -1103,14 +1553,28 @@ for (int i = 0; i < aiCount; i++) {
                         }
                     } else {
                         int tossCount = 0;
-                        for (int i = 0; i < game.player_hand.count; i++) {
-                            if (CanAttack(&game, game.player_hand.cards[i])) {
-                                Rectangle r = {startX + i * 90, screenHeight - 165, cardW, cardH};
-                                Vector2 topCenter = {r.x + cardW / 2.0f, r.y};
-                                DrawCardHintBadge(topCenter, GetUIText("HINT_TOSS", (Language)saveData.language), GREEN);
-                                tossCount++;
+                        int bestToss = -1, bestTossRank = 999;
+
+                        for (int k = 0; k < game.player_hand.count; k++) {
+                            Card pc = game.player_hand.cards[k];
+                            if (!CanAttack(&game, pc)) continue;
+                            tossCount++;
+                            if (endgameRule && !KingCanBeatCard(&game, pc) && pc.rank < bestTossRank) {
+                                bestTossRank = pc.rank;
+                                bestToss = k;
                             }
                         }
+
+                        for (int i = 0; i < game.player_hand.count; i++) {
+                            Rectangle r = {startX + i * 90, screenHeight - 165, cardW, cardH};
+                            Vector2 topCenter = {r.x + cardW / 2.0f, r.y};
+                            if (i == bestToss) {
+                                DrawCardHintBadge(topCenter, GetUIText("HINT_BEST_MOVE", (Language)saveData.language), GREEN);
+                            } else if (CanAttack(&game, game.player_hand.cards[i])) {
+                                DrawCardHintBadge(topCenter, GetUIText("HINT_TOSS", (Language)saveData.language), GREEN);
+                            }
+                        }
+
                         if (tossCount == 0) {
                             const char* noTossTxt = GetUIText("HINT_NO_TOSS_ENTER", (Language)saveData.language);
                             DrawHintBanner(screenWidth / 2.0f, screenHeight - 215, noTossTxt, GOLD);
@@ -1171,7 +1635,7 @@ for (int i = 0; i < aiCount; i++) {
         }
 
         // Draw Non-Overlapping Dialogue / Tutorial Box
-        if (appState == STATE_INTRO_DIALOGUE || appState == STATE_EPILOGUE || appState == STATE_CAUGHT || (appState == STATE_TUTORIAL && !is_selecting_cheat_card && g_invalid_move_timer <= 0)) {
+        if (appState == STATE_INTRO_DIALOGUE || (appState == STATE_EPILOGUE && epiStep < 5) || appState == STATE_CAUGHT || (appState == STATE_TUTORIAL && !is_selecting_cheat_card && g_invalid_move_timer <= 0)) {
             if (appState == STATE_CAUGHT) {
                 DrawRectangle(0, 0, screenWidth, screenHeight, (Color){255, 0, 0, 110});
             }
@@ -1184,6 +1648,10 @@ for (int i = 0; i < aiCount; i++) {
             char buffer[2048] = {0};
             strncpy(buffer, tw.text, tw.current_len);
             DrawAppText(buffer, box.x + 25, box.y + 20, 22, WHITE);
+        }
+
+        if (appState == STATE_INTRO_DIALOGUE && introFadeDir != 0) {
+            DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, introFade));
         }
 
         // ESC Quit Confirmation Modal Popup
@@ -1201,6 +1669,8 @@ for (int i = 0; i < aiCount; i++) {
                 showQuitModal = false;
             }
         }
+
+        DrawCursorParticles();
 
         EndTextureMode();
 
@@ -1227,6 +1697,9 @@ for (int i = 0; i < aiCount; i++) {
     UnloadRenderTexture(canvas);
     CloseGameAudio();
     UnloadKingSprites();
+    UnloadWandererSprites();
+    UnloadPrincessSprite();
+    UnloadFinalSprite();
     UnloadTableSprite();
     UnloadRenderFont();
     CloseWindow();

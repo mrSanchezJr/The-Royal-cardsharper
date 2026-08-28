@@ -166,17 +166,41 @@ bool PlayerCheat(GameState* game) {
 }
 
 bool PlayerCheatSpecific(GameState* game, int hand_index, Card* out_old_card, Card* out_new_card) {
-    if (hand_index < 0 || hand_index >= game->player_hand.count || game->deck.count <= 0) return false;
-    
+    if (hand_index < 0 || hand_index >= game->player_hand.count) return false;
+
+    // Deck's bottom card (index 0) is the trump card — it must never be stolen
+    if (game->deck.count <= 1) return false;
+
     Card oldCard = game->player_hand.cards[hand_index];
-    Card newCard = game->deck.cards[game->deck.count - 1];
-    
+
+    // Take a RANDOM card from the deck (excluding the trump at index 0);
+    // our old card is hidden in its place
+    int r = 1 + rand() % (game->deck.count - 1);
+    Card newCard = game->deck.cards[r];
+
     game->player_hand.cards[hand_index] = newCard;
-    game->deck.cards[game->deck.count - 1] = oldCard;
-    
+    game->deck.cards[r] = oldCard;
+
     if (out_old_card) *out_old_card = oldCard;
     if (out_new_card) *out_new_card = newCard;
-    
+
+    return true;
+}
+
+// Deterministic variant used by the tutorial: always swaps with the TOP deck
+// card (the tutorial stacks a specific lesson card there).
+bool PlayerCheatTop(GameState* game, int hand_index, Card* out_old_card, Card* out_new_card) {
+    if (hand_index < 0 || hand_index >= game->player_hand.count || game->deck.count <= 1) return false;
+
+    Card oldCard = game->player_hand.cards[hand_index];
+    Card newCard = game->deck.cards[game->deck.count - 1];
+
+    game->player_hand.cards[hand_index] = newCard;
+    game->deck.cards[game->deck.count - 1] = oldCard;
+
+    if (out_old_card) *out_old_card = oldCard;
+    if (out_new_card) *out_new_card = newCard;
+
     return true;
 }
 

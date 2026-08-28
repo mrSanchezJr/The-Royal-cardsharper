@@ -9,6 +9,12 @@ echo Generating king sprite headers...
 %XXD% -i src\characters\king_angry_state.png      > src\king_angry_state.h
 %XXD% -i src\characters\king_overwhelmed_state.png > src\king_overwhelmed_state.h
 %XXD% -i src\characters\king_turned_head.png       > src\king_turned_head.h
+%XXD% -i src\characters\wanderer_hooded.png        > src\wanderer_hooded.h
+%XXD% -i src\characters\wanderer_idle.png          > src\wanderer_idle.h
+%XXD% -i src\characters\lesb_final.png              > src\lesb_final.h
+%XXD% -i src\characters\princess.png                > src\princess.h
+echo Generating button sound header...
+%XXD% -i src\audio\btn_press.MP3 > src\btn_press.h
 echo Generating table sprite header...
 %XXD% -i src\sprites\table.png > src\table_sprite.h
 if errorlevel 1 (

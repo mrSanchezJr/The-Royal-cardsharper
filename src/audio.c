@@ -1,5 +1,6 @@
 #include "audio.h"
 #include "raylib.h"
+#include "btn_press.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -9,12 +10,15 @@
 typedef enum { OSC_SINE, OSC_TRI, OSC_SAW } OscType;
 
 static Sound g_sfx[SFX_COUNT];
-static Music g_music;
-static unsigned char* g_music_mem = NULL;
-static int g_music_mem_size = 0;
+static Music g_tracks[MUSIC_COUNT];
+static unsigned char* g_trackMems[MUSIC_COUNT];
+static int g_trackMemSizes[MUSIC_COUNT];
+static Music g_btn_music;
+static bool g_btn_loaded = false;
 static bool g_ready = false;
 static float g_music_vol = 0.7f;
 static float g_sfx_vol = 0.7f;
+static MusicTrack g_curTrack = MUSIC_MENU;
 
 static void AddTone(float* buf, int n, float start, float dur,
                     float f0, float f1, float amp, OscType osc, float decay)
@@ -84,50 +88,17 @@ static Sound MakeSoundFromPcm(short* pcm, int n)
     return s;
 }
 
-static void BuildMusic(void)
+static bool BuildWavFromMix(float* mix, int n, unsigned char** outMem, int* outSize)
 {
-    const float beat = 0.625f;
-    const int beats = 16;
-    const float loopDur = beats * beat;
-    int n = (int)(loopDur * AUDIO_SR);
-
-    float* mix = (float*)calloc((size_t)n, sizeof(float));
-    if (!mix) return;
-
-    static const float bassRoots[4] = { 110.0f, 87.31f, 65.41f, 98.0f };
-    static const int mel[16] = { 3, -1, -1, 0, 1, -1, 2, -1, 3, 4, -1, 3, 2, -1, 0, -1 };
-    static const float pent[5] = { 440.0f, 523.25f, 587.33f, 659.26f, 783.99f };
-    static const float arpRatio[4] = { 1.0f, 1.5f, 2.0f, 1.5f };
-
-    for (int c = 0; c < 4; c++) {
-        float chordStart = c * 4 * beat;
-        AddTone(mix, n, chordStart, 4 * beat, bassRoots[c], bassRoots[c], 0.20f, OSC_SINE, 0.9f);
-        AddTone(mix, n, chordStart + 2 * beat, 2 * beat, bassRoots[c], bassRoots[c], 0.14f, OSC_SINE, 1.6f);
-        for (int k = 0; k < 8; k++) {
-            float f = bassRoots[c] * 2.0f * arpRatio[k % 4];
-            AddTone(mix, n, chordStart + k * beat * 0.5f, beat * 0.55f, f, f, 0.13f, OSC_TRI, 7.0f);
-        }
-    }
-
-    for (int b = 0; b < beats; b++) {
-        if (mel[b] >= 0) {
-            AddTone(mix, n, b * beat, beat * 1.2f, pent[mel[b]], pent[mel[b]], 0.11f, OSC_TRI, 4.0f);
-        }
-        AddNoise(mix, n, b * beat, 0.03f, (b % 4 == 0) ? 0.05f : 0.03f, 1, 60.0f);
-    }
-
     short* pcm = RenderToPcm(mix, n);
     free(mix);
-    if (!pcm) return;
-
+    if (!pcm) return false;
     int dataLen = n * 2;
-    g_music_mem_size = 44 + dataLen;
-    g_music_mem = (unsigned char*)malloc((size_t)g_music_mem_size);
-    if (!g_music_mem) { free(pcm); return; }
-
-    unsigned char* m = g_music_mem;
+    int total = 44 + dataLen;
+    unsigned char* m = (unsigned char*)malloc((size_t)total);
+    if (!m) { free(pcm); return false; }
     memcpy(m + 0, "RIFF", 4);
-    *(unsigned int*)(m + 4) = (unsigned int)(g_music_mem_size - 8);
+    *(unsigned int*)(m + 4) = (unsigned int)(total - 8);
     memcpy(m + 8, "WAVE", 4);
     memcpy(m + 12, "fmt ", 4);
     *(unsigned int*)(m + 16) = 16;
@@ -141,6 +112,191 @@ static void BuildMusic(void)
     *(unsigned int*)(m + 40) = (unsigned int)dataLen;
     memcpy(m + 44, pcm, (size_t)dataLen);
     free(pcm);
+    *outMem = m;
+    *outSize = total;
+    return true;
+}
+
+static void BuildMenuMusic(void)
+{
+    const float beat = 0.75f;
+    const int beats = 12;
+    int n = (int)(beats * beat * AUDIO_SR);
+    float* mix = (float*)calloc((size_t)n, sizeof(float));
+    if (!mix) return;
+    static const float roots[3] = { 98.0f, 110.0f, 123.47f };
+    for (int c = 0; c < 3; c++) {
+        float s = c * 4 * beat;
+        AddTone(mix, n, s, 4*beat, roots[c], roots[c], 0.14f, OSC_SINE, 0.7f);
+        AddTone(mix, n, s+2*beat, 2*beat, roots[c]*1.5f, roots[c]*1.5f, 0.07f, OSC_SINE, 1.2f);
+        for (int k = 0; k < 8; k++) {
+            float f = roots[c] * 2.0f * (k%2 ? 1.5f : 1.0f);
+            AddTone(mix, n, s + k*0.5f*beat, beat*0.6f, f, f, 0.09f, OSC_TRI, 6.0f);
+        }
+    }
+    static const float pent[5] = { 440.0f, 523.25f, 587.33f, 659.25f, 783.99f };
+    static const int mel[12] = { 2, -1, 3, 1, 2, 0, 4, -1, 1, 2, 0, -1 };
+    for (int b = 0; b < beats; b++) if (mel[b] >= 0)
+        AddTone(mix, n, b*beat, beat*1.1f, pent[mel[b]], pent[mel[b]], 0.10f, OSC_SINE, 2.5f);
+    for (int b = 0; b < beats; b++) AddNoise(mix, n, b*beat, 0.02f, 0.02f, 1, 70.0f);
+    BuildWavFromMix(mix, n, &g_trackMems[MUSIC_MENU], &g_trackMemSizes[MUSIC_MENU]);
+}
+
+static void BuildGameCalmMusic(void)
+{
+    const float beat = 0.68f;
+    const int beats = 16;
+    int n = (int)(beats * beat * AUDIO_SR);
+    float* mix = (float*)calloc((size_t)n, sizeof(float));
+    if (!mix) return;
+    float loopDur = beats * beat;
+    AddTone(mix, n, 0, loopDur, 110.0f, 110.0f, 0.07f, OSC_SINE, 0.12f);
+    AddTone(mix, n, 0, loopDur, 164.81f, 164.81f, 0.045f, OSC_SINE, 0.14f);
+    for (int b = 0; b < beats; b++) {
+        float amp = (b%4==0) ? 0.09f : (b%2==0 ? 0.05f : 0.03f);
+        AddTone(mix, n, b*beat, 0.16f, 72.0f, 48.0f, amp, OSC_SINE, 18.0f);
+        AddNoise(mix, n, b*beat, 0.04f, amp*0.18f, 1, 55.0f);
+    }
+    static const float dor[8] = { 440.0f, 493.88f, 523.25f, 587.33f, 659.25f, 739.99f, 783.99f, 880.0f };
+    static const int mel[16] = { 4, -1, 3,2, 4,3,2,1, 3,2,1,0, 1,2,4,-1 };
+    for (int b = 0; b < beats; b++) if (mel[b] >= 0) {
+        AddTone(mix, n, b*beat, beat*0.92f, dor[mel[b]], dor[mel[b]], 0.13f, OSC_TRI, 3.2f);
+        AddTone(mix, n, b*beat, beat*0.92f, dor[mel[b]]*0.5f, dor[mel[b]]*0.5f, 0.035f, OSC_SINE, 1.2f);
+    }
+    for (int b = 0; b < beats; b+=4) {
+        float f = dor[(b/4)%8];
+        AddTone(mix, n, b*beat, 0.4f, f*1.5f, f*1.5f, 0.05f, OSC_TRI, 7.0f);
+    }
+    BuildWavFromMix(mix, n, &g_trackMems[MUSIC_GAME_CALM], &g_trackMemSizes[MUSIC_GAME_CALM]);
+}
+
+static void BuildDuskRoadMusic(void)
+{
+    // Middle between GREY ROAD (2) and BAGPIPES (3), closer to 2 - calm but with hint of tension
+    const float beat = 0.66f; // between 0.68 and 0.625, weighted to calm
+    const int beats = 16;
+    int n = (int)(beats * beat * AUDIO_SR);
+    float* mix = (float*)calloc((size_t)n, sizeof(float));
+    if (!mix) return;
+    float loopDur = beats * beat;
+    // drones: SINE base like calm (0.07/0.045) + faint SAW hint from bagpipes (very low)
+    AddTone(mix, n, 0, loopDur, 110.0f, 110.0f, 0.075f, OSC_SINE, 0.12f);
+    AddTone(mix, n, 0, loopDur, 164.81f, 164.81f, 0.050f, OSC_SINE, 0.14f);
+    AddTone(mix, n, 0, loopDur, 110.0f, 110.0f, 0.032f, OSC_SAW, 0.20f); // faint bagpipe colour
+    AddTone(mix, n, 0, loopDur, 165.4f, 165.4f, 0.018f, OSC_SINE, 0.22f);
+    AddTone(mix, n, 0, loopDur, 55.0f, 55.0f, 0.040f, OSC_SINE, 0.10f);
+    for (int b = 0; b < beats; b++) {
+        float amp = (b%4==0) ? 0.10f : (b%2==0 ? 0.055f : 0.030f); // between calm 0.09 and bagpipes 0.13
+        AddTone(mix, n, b*beat, 0.15f, 72.0f, 48.0f, amp, OSC_SINE, 16.0f);
+        AddNoise(mix, n, b*beat, 0.04f, amp*0.19f, 1, 48.0f);
+    }
+    static const float dor[8] = { 440.0f, 493.88f, 523.25f, 587.33f, 659.25f, 739.99f, 783.99f, 880.0f };
+    // melody between calm (- TRI only) and bagpipes (- SAW + grace) - TRI main + soft grace
+    static const int mel[16] = { 4, -1, 3,2, 4,3,2,1, 4,2,1,0, 1,2,4,-1 };
+    for (int b = 0; b < beats; b++) if (mel[b] >= 0) {
+        int g = mel[b]+1; if (g>7) g=7;
+        if (b>0 && b%2==0) AddTone(mix, n, b*beat-0.06f, 0.05f, dor[g], dor[g], 0.035f, OSC_TRI, 13.0f); // occasional grace, softer
+        AddTone(mix, n, b*beat, beat*0.92f, dor[mel[b]], dor[mel[b]], 0.125f, OSC_TRI, 3.0f); // TRI like calm, slightly louder
+        AddTone(mix, n, b*beat, beat*0.92f, dor[mel[b]]*0.5f, dor[mel[b]]*0.5f, 0.030f, OSC_SINE, 1.2f);
+        if (mel[b]>=3) AddTone(mix, n, b*beat, beat*0.92f, dor[mel[b]], dor[mel[b]], 0.035f, OSC_SAW, 5.0f); // faint SAW overtone on higher notes
+    }
+    for (int b = 0; b < beats; b+=4) {
+        float f = dor[(b/2)%8];
+        AddTone(mix, n, b*beat, 0.38f, f*1.5f, f*1.5f, 0.042f, OSC_TRI, 8.0f);
+    }
+    // also add faint lute every 8 beats from bagpipes side
+    for (int b = 0; b < beats; b+=8) {
+        float f = dor[(b/8)%8];
+        AddTone(mix, n, b*beat+0.3f, 0.30f, f*2.0f, f*2.0f, 0.022f, OSC_TRI, 9.0f);
+    }
+    BuildWavFromMix(mix, n, &g_trackMems[MUSIC_DUSK_ROAD], &g_trackMemSizes[MUSIC_DUSK_ROAD]);
+}
+
+static void BuildGameMusic(void)
+{
+    // Calmer but same tempo 0.625 - less harsh via softer detune & TRI grace
+    const float beat = 0.625f;
+    const int beats = 16;
+    int n = (int)(beats * beat * AUDIO_SR);
+    float* mix = (float*)calloc((size_t)n, sizeof(float));
+    if (!mix) return;
+    float loopDur = beats * beat;
+    // drones: main SAW kept, detuned pair softened via SINE (less beating harshness)
+    AddTone(mix, n, 0, loopDur, 110.0f, 110.0f, 0.12f, OSC_SAW, 0.13f);
+    AddTone(mix, n, 0, loopDur, 110.7f, 110.7f, 0.04f, OSC_SINE, 0.18f);
+    AddTone(mix, n, 0, loopDur, 164.81f, 164.81f, 0.07f, OSC_SAW, 0.16f);
+    AddTone(mix, n, 0, loopDur, 165.4f, 165.4f, 0.025f, OSC_SINE, 0.20f);
+    AddTone(mix, n, 0, loopDur, 55.0f, 55.0f, 0.055f, OSC_SINE, 0.09f);
+    for (int b = 0; b < beats; b++) {
+        float amp = (b%4==0) ? 0.13f : (b%2==0 ? 0.07f : 0.035f); // softer than 0.20/0.11/0.06
+        AddTone(mix, n, b*beat, 0.15f, 78.0f, 42.0f, amp, OSC_SINE, 13.0f);
+        AddNoise(mix, n, b*beat, 0.04f, amp*0.20f, 1, 42.0f);
+    }
+    static const float dor[8] = { 440.0f, 493.88f, 523.25f, 587.33f, 659.25f, 739.99f, 783.99f, 880.0f };
+    static const int mel[16] = { 4, -1, 3,2, 4,3,2,1, 4,3,2,1, 0,1,2,-1 };
+    for (int b = 0; b < beats; b++) if (mel[b] >= 0) {
+        int g = mel[b]+1; if (g>7) g=7;
+        if (b>0) AddTone(mix, n, b*beat-0.07f, 0.06f, dor[g], dor[g], 0.05f, OSC_TRI, 12.0f); // TRI grace, was SAW 0.10
+        AddTone(mix, n, b*beat, beat*0.95f, dor[mel[b]], dor[mel[b]], 0.145f, OSC_SAW, 3.2f); // 0.20->0.145
+        AddTone(mix, n, b*beat, beat*0.95f, dor[mel[b]]*0.5f, dor[mel[b]]*0.5f, 0.028f, OSC_SINE, 1.3f);
+    }
+    for (int b = 0; b < beats; b+=2) {
+        float f = dor[ (b/2)%8 ];
+        AddTone(mix, n, b*beat, 0.35f, f*2.0f, f*2.0f, 0.045f, OSC_TRI, 10.5f);
+    }
+    BuildWavFromMix(mix, n, &g_trackMems[MUSIC_GAME], &g_trackMemSizes[MUSIC_GAME]);
+}
+
+static void BuildEpilogueMusic(void)
+{
+    const float beat = 0.90f;
+    const int beats = 12;
+    int n = (int)(beats * beat * AUDIO_SR);
+    float* mix = (float*)calloc((size_t)n, sizeof(float));
+    if (!mix) return;
+    static const float padRoots[4] = { 130.81f, 146.83f, 164.81f, 130.81f };
+    for (int c = 0; c < 4; c++) {
+        float s = c*3*beat;
+        // longer sustain (smaller decay) to keep pad loud till loop edge
+        AddTone(mix, n, s, 3*beat, padRoots[c], padRoots[c], 0.11f, OSC_SINE, 0.22f);
+        AddTone(mix, n, s, 3*beat, padRoots[c]*2.0f, padRoots[c]*2.0f, 0.045f, OSC_TRI, 0.55f);
+        AddTone(mix, n, s, 3*beat, padRoots[c]*3.0f/2.0f, padRoots[c]*3.0f/2.0f, 0.032f, OSC_SINE, 0.40f);
+    }
+    static const float lyr[5] = { 523.25f, 587.33f, 659.25f, 783.99f, 880.0f };
+    // last note was rest (-1) creating 0.9s silence before loop - replaced with 0 for continuity
+    static const int mel[12] = { 2, 3, 4, 2, 1, 0, 1, 2, 3, 2, 1, 0 };
+    for (int b = 0; b < beats; b++) if (mel[b] >= 0) {
+        AddTone(mix, n, b*beat+0.12f, beat*0.85f, lyr[mel[b]], lyr[mel[b]], 0.14f, OSC_SINE, 1.25f);
+        AddTone(mix, n, b*beat+0.12f, beat*0.85f, lyr[mel[b]]*2.0f, lyr[mel[b]]*2.0f, 0.025f, OSC_TRI, 1.9f);
+    }
+    for (int g = 0; g < 4; g++) {
+        float base = g*3*beat + 1.4f*beat;
+        for (int k = 0; k < 5; k++)
+            AddTone(mix, n, base + k*0.07f, 0.5f, lyr[k%5], lyr[k%5], 0.038f, OSC_TRI, 3.5f);
+    }
+    // --- true seamless loop: long equal-power crossfade + very short click fade ---
+    {
+        // 1.8 sec ~ 2 beats crossfade - covers pad overlap and harp tail
+        int x = (int)(1.80f * AUDIO_SR);
+        if (x > n) x = n/2;
+        for (int i=0;i<x;i++) {
+            float t = (float)i / (float)x; // 0..1
+            // equal-power crossfade: tail fades out cos, head fades in sin
+            float wTail = cosf(t * PI * 0.5f) * 0.55f;
+            float wHead = sinf(t * PI * 0.5f);
+            // blend tail energy into head region
+            mix[i] = mix[i] * (0.45f + 0.55f * wHead) + mix[n - x + i] * wTail;
+        }
+        // also smear last harp gliss into first 0.4s so gap 10.75->12.0 disappears
+        for (int k=0;k<5;k++) {
+            float pos = k*0.07f;
+            if (pos < 0.35f) AddTone(mix, n, pos, 0.5f, lyr[k%5], lyr[k%5], 0.018f, OSC_TRI, 3.5f);
+        }
+        int fade = (int)(0.008f * AUDIO_SR); // 8ms click-free only, not to kill energy
+        for (int i=0;i<fade && i<n;i++) mix[i] *= (float)i / (float)fade;
+        for (int i=n-fade;i<n;i++) if (i>=0) mix[i] *= (float)(n-1 - i) / (float)fade;
+    }
+    BuildWavFromMix(mix, n, &g_trackMems[MUSIC_EPILOGUE], &g_trackMemSizes[MUSIC_EPILOGUE]);
 }
 
 void InitGameAudio(void)
@@ -148,9 +304,8 @@ void InitGameAudio(void)
     InitAudioDevice();
     g_ready = IsAudioDeviceReady();
     if (!g_ready) return;
-
     for (int i = 0; i < SFX_COUNT; i++) g_sfx[i] = (Sound){ 0 };
-
+    for (int i = 0; i < MUSIC_COUNT; i++) { g_tracks[i] = (Music){0}; g_trackMems[i]=NULL; g_trackMemSizes[i]=0; }
     {
         int n = (int)(0.12f * AUDIO_SR);
         float* mix = (float*)calloc((size_t)n, sizeof(float));
@@ -212,19 +367,34 @@ void InitGameAudio(void)
             if (pcm) g_sfx[SFX_ROUND_END] = MakeSoundFromPcm(pcm, n);
         }
     }
-
-    BuildMusic();
-    g_music = LoadMusicStreamFromMemory(".wav", g_music_mem, g_music_mem_size);
-    g_music.looping = true;
-    PlayMusicStream(g_music);
+    BuildMenuMusic();
+    BuildGameCalmMusic();
+    BuildDuskRoadMusic();
+    BuildGameMusic();
+    BuildEpilogueMusic();
+    for (int i = 0; i < MUSIC_COUNT; i++) {
+        if (g_trackMems[i]) {
+            g_tracks[i] = LoadMusicStreamFromMemory(".wav", g_trackMems[i], g_trackMemSizes[i]);
+            g_tracks[i].looping = true;
+            SetMusicVolume(g_tracks[i], g_music_vol);
+        }
+    }
+    g_curTrack = MUSIC_MENU;
+    PlayMusicStream(g_tracks[g_curTrack]);
+    g_btn_music = LoadMusicStreamFromMemory(".mp3", src_audio_btn_press_MP3, (int)src_audio_btn_press_MP3_len);
+    g_btn_music.looping = false;
+    g_btn_loaded = (g_btn_music.frameCount > 0);
     ApplyAudioVolumes(g_music_vol, g_sfx_vol);
 }
 
 void CloseGameAudio(void)
 {
     if (!g_ready) return;
-    UnloadMusicStream(g_music);
-    if (g_music_mem) { free(g_music_mem); g_music_mem = NULL; }
+    for (int i = 0; i < MUSIC_COUNT; i++) {
+        UnloadMusicStream(g_tracks[i]);
+        if (g_trackMems[i]) { free(g_trackMems[i]); g_trackMems[i]=NULL; }
+    }
+    if (g_btn_loaded) { UnloadMusicStream(g_btn_music); g_btn_loaded = false; }
     for (int i = 0; i < SFX_COUNT; i++) UnloadSound(g_sfx[i]);
     CloseAudioDevice();
     g_ready = false;
@@ -232,7 +402,9 @@ void CloseGameAudio(void)
 
 void UpdateGameAudio(void)
 {
-    if (g_ready) UpdateMusicStream(g_music);
+    if (!g_ready) return;
+    UpdateMusicStream(g_tracks[g_curTrack]);
+    if (g_btn_loaded) UpdateMusicStream(g_btn_music);
 }
 
 void ApplyAudioVolumes(float music_vol, float sfx_vol)
@@ -244,7 +416,8 @@ void ApplyAudioVolumes(float music_vol, float sfx_vol)
     g_music_vol = music_vol;
     g_sfx_vol = sfx_vol;
     if (!g_ready) return;
-    SetMusicVolume(g_music, g_music_vol);
+    for (int i = 0; i < MUSIC_COUNT; i++) SetMusicVolume(g_tracks[i], g_music_vol);
+    if (g_btn_loaded) SetMusicVolume(g_btn_music, g_sfx_vol);
     for (int i = 0; i < SFX_COUNT; i++) SetSoundVolume(g_sfx[i], g_sfx_vol);
 }
 
@@ -252,4 +425,21 @@ void PlayGameSfx(SoundFx fx)
 {
     if (!g_ready || fx < 0 || fx >= SFX_COUNT) return;
     PlaySound(g_sfx[fx]);
+}
+
+void PlayButtonSfx(void)
+{
+    if (!g_ready || !g_btn_loaded) return;
+    StopMusicStream(g_btn_music);
+    PlayMusicStream(g_btn_music);
+}
+
+void SetMusicTrack(MusicTrack track)
+{
+    if (!g_ready || track < 0 || track >= MUSIC_COUNT) return;
+    if (track == g_curTrack) return;
+    StopMusicStream(g_tracks[g_curTrack]);
+    g_curTrack = track;
+    PlayMusicStream(g_tracks[g_curTrack]);
+    SetMusicVolume(g_tracks[g_curTrack], g_music_vol);
 }
