@@ -12,11 +12,21 @@ static void ShuffleDeck(Deck* deck) {
 }
 
 static void DealCards(GameState* game) {
-    while (game->player_hand.count < 6 && game->deck.count > 0) {
-        game->player_hand.cards[game->player_hand.count++] = game->deck.cards[--game->deck.count];
-    }
-    while (game->ai_hand.count < 6 && game->deck.count > 0) {
-        game->ai_hand.cards[game->ai_hand.count++] = game->deck.cards[--game->deck.count];
+    // Classic: attacker replenishes first
+    if (game->is_player_turn) {
+        while (game->player_hand.count < 6 && game->deck.count > 0) {
+            game->player_hand.cards[game->player_hand.count++] = game->deck.cards[--game->deck.count];
+        }
+        while (game->ai_hand.count < 6 && game->deck.count > 0) {
+            game->ai_hand.cards[game->ai_hand.count++] = game->deck.cards[--game->deck.count];
+        }
+    } else {
+        while (game->ai_hand.count < 6 && game->deck.count > 0) {
+            game->ai_hand.cards[game->ai_hand.count++] = game->deck.cards[--game->deck.count];
+        }
+        while (game->player_hand.count < 6 && game->deck.count > 0) {
+            game->player_hand.cards[game->player_hand.count++] = game->deck.cards[--game->deck.count];
+        }
     }
 }
 
@@ -38,9 +48,19 @@ void InitGame(GameState* game) {
     
     game->trump_card = game->deck.cards[0];
     
+    // Initial deal: player first (as before), then determine first attacker by lowest trump
+    game->is_player_turn = true;
     DealCards(game);
     
-    game->is_player_turn = true;
+    // Classic rule: lowest trump attacks first
+    int pTrump = 99, aTrump = 99;
+    for (int i = 0; i < game->player_hand.count; i++) if (game->player_hand.cards[i].suit == game->trump_card.suit && game->player_hand.cards[i].rank < pTrump) pTrump = game->player_hand.cards[i].rank;
+    for (int i = 0; i < game->ai_hand.count; i++) if (game->ai_hand.cards[i].suit == game->trump_card.suit && game->ai_hand.cards[i].rank < aTrump) aTrump = game->ai_hand.cards[i].rank;
+    if (pTrump != 99 && aTrump != 99) game->is_player_turn = (pTrump < aTrump);
+    else if (pTrump != 99) game->is_player_turn = true;
+    else if (aTrump != 99) game->is_player_turn = false;
+    else game->is_player_turn = true; // no trumps - fallback
+
     game->player_took_cards = false;
     game->ai_took_cards = false;
     game->round_over = false;
@@ -113,6 +133,15 @@ bool CanDefend(const GameState* game, Card attacking, Card defending) {
 bool PlayerAttack(GameState* game, int card_index) {
     if (card_index < 0 || card_index >= game->player_hand.count) return false;
     if (game->table_count >= 6) return false;
+    // Classic "Durak" rule: attacker cannot put more cards on table than
+    // the defender had at the START of this round. Their original count =
+    // current hand + cards already played in defense this round.
+    int defended_this_round = 0;
+    for (int i = 0; i < game->table_count; i++) {
+        if (game->table[i].has_defender) defended_this_round++;
+    }
+    int defender_original = game->ai_hand.count + defended_this_round;
+    if (game->table_count >= defender_original) return false;
     
     Card card = game->player_hand.cards[card_index];
     if (CanAttack(game, card)) {
@@ -235,7 +264,11 @@ void EndRound(GameState* game) {
 
 int CheckWinCondition(const GameState* game) {
     if (game->deck.count == 0) {
-        if (game->player_hand.count == 0 && game->ai_hand.count == 0) return 3; // Draw
+        if (game->player_hand.count == 0 && game->ai_hand.count == 0) {
+            // Both empty after BИТО – win for who went out first (the attacker)
+            // After EndRound with BИТО, is_player_turn is next attacker, so last attacker is opposite
+            return !game->is_player_turn ? 1 : 2;
+        }
         if (game->player_hand.count == 0) return 1; // Player win
         if (game->ai_hand.count == 0) return 2; // AI win
     }

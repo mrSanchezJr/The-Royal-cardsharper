@@ -64,7 +64,14 @@ int main(void) {
     const int RES_COUNT = 6;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    //SetTraceLogLevel(LOG_WARNING); // Чтобы видеть предупреждения
+
+// Принудительно отключаем DPI-масштабирование для этого окна
+SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+
     InitWindow(screenWidth, screenHeight, "The Royal Cardshaper (beta)");
+    RestoreWindow();
+SetWindowPosition(100, 100); // "Будим" окно
     SetWindowMinSize(640, 360);
     SetWindowMaxSize(1920, 1080);
     SetTargetFPS(60);
@@ -87,10 +94,28 @@ int main(void) {
     SaveData saveData;
     LoadSaveData(&saveData);
 
+    // Auto-select initial window size based on monitor
+    if (!saveData.first_launch_done) {
+        int mon = GetCurrentMonitor();
+        int sw = GetMonitorWidth(mon);
+        int sh = GetMonitorHeight(mon);
+        if (sw >= 3840 || sh >= 2160) {
+            saveData.window_resolution = 5; // 4K -> FHD (1920x1080)
+        } else if (sw < RES_W[4] || sh < RES_H[4]) {
+            int best = 0;
+            for (int i = 0; i < RES_COUNT; i++) {
+                if (RES_W[i] < sw && RES_H[i] < sh) best = i;
+            }
+            saveData.window_resolution = best;
+        } else {
+            saveData.window_resolution = 4; // default HD+
+        }
+    }
+
     InitGameAudio();
     ApplyAudioVolumes(saveData.music_volume / 10.0f, saveData.sfx_volume / 10.0f);
 
-    // Apply saved window resolution
+    // Apply saved (or auto-selected) window resolution
     SetWindowSize(RES_W[saveData.window_resolution], RES_H[saveData.window_resolution]);
 
     AppState appState = saveData.first_launch_done ? STATE_MENU : STATE_LANG_SELECT;
@@ -639,6 +664,12 @@ Vector2 heartEmitB = { screenWidth * 0.74f - 700, screenHeight * 0.88f - 500}; /
                                     TriggerKingComment(KING_EVENT_PLAYER_TAKE, (Language)saveData.language);
                                 }
                             }
+                        }
+                        // Auto BИТО when attacker has no cards left to toss (hand empty) and all attacks are defended
+                        if (game.is_player_turn && !game.round_over && game.player_hand.count == 0 && game.table_count > 0 && !cardFlight.active) {
+                            bool allDef = true;
+                            for (int _i=0; _i<game.table_count; _i++) if (!game.table[_i].has_defender) allDef = false;
+                            if (allDef) PlayerPass(&game);
                         }
                         
                         if (!game.is_player_turn && !is_cheating && !is_selecting_cheat_card) {
@@ -1552,26 +1583,39 @@ for (int i = 0; i < aiCount; i++) {
                             }
                         }
                     } else {
+                        // Cannot toss if table already has as many cards as defender had
+                        // at the start of this round (current hand + defended this round).
+                        int defended_this_round = 0;
+                        for (int t = 0; t < game.table_count; t++) {
+                            if (game.table[t].has_defender) defended_this_round++;
+                        }
+                        int defender_original = game.ai_hand.count + defended_this_round;
+                        bool canTossMore = (game.table_count < defender_original);
+
                         int tossCount = 0;
                         int bestToss = -1, bestTossRank = 999;
 
-                        for (int k = 0; k < game.player_hand.count; k++) {
-                            Card pc = game.player_hand.cards[k];
-                            if (!CanAttack(&game, pc)) continue;
-                            tossCount++;
-                            if (endgameRule && !KingCanBeatCard(&game, pc) && pc.rank < bestTossRank) {
-                                bestTossRank = pc.rank;
-                                bestToss = k;
+                        if (canTossMore) {
+                            for (int k = 0; k < game.player_hand.count; k++) {
+                                Card pc = game.player_hand.cards[k];
+                                if (!CanAttack(&game, pc)) continue;
+                                tossCount++;
+                                if (endgameRule && !KingCanBeatCard(&game, pc) && pc.rank < bestTossRank) {
+                                    bestTossRank = pc.rank;
+                                    bestToss = k;
+                                }
                             }
                         }
 
                         for (int i = 0; i < game.player_hand.count; i++) {
                             Rectangle r = {startX + i * 90, screenHeight - 165, cardW, cardH};
                             Vector2 topCenter = {r.x + cardW / 2.0f, r.y};
-                            if (i == bestToss) {
-                                DrawCardHintBadge(topCenter, GetUIText("HINT_BEST_MOVE", (Language)saveData.language), GREEN);
-                            } else if (CanAttack(&game, game.player_hand.cards[i])) {
-                                DrawCardHintBadge(topCenter, GetUIText("HINT_TOSS", (Language)saveData.language), GREEN);
+                            if (canTossMore) {
+                                if (i == bestToss) {
+                                    DrawCardHintBadge(topCenter, GetUIText("HINT_BEST_MOVE", (Language)saveData.language), GREEN);
+                                } else if (CanAttack(&game, game.player_hand.cards[i])) {
+                                    DrawCardHintBadge(topCenter, GetUIText("HINT_TOSS", (Language)saveData.language), GREEN);
+                                }
                             }
                         }
 

@@ -68,12 +68,30 @@ void AITakeTurn(GameState* state, int card_skill) {
             }
         }
 
-        // On Easy skill: do not toss extra cards once the first attack was defended!
-        if (card_skill == 0 && state->table_count >= 1) {
-            state->round_over = true;
-            state->player_took_cards = false;
-            state->ai_took_cards = false;
-            return;
+        // On Easy skill: toss at most 1 extra card with 50% chance, only while deck has cards
+        if (card_skill == 0) {
+            if (state->table_count >= 1 && state->deck.count == 0) {
+                state->round_over = true;
+                state->player_took_cards = false;
+                state->ai_took_cards = false;
+                return;
+            }
+            if (state->table_count >= 2) {
+                state->round_over = true;
+                state->player_took_cards = false;
+                state->ai_took_cards = false;
+                return;
+            }
+            if (state->table_count == 1) {
+                if (rand() % 2 == 0) {
+                    // 50% — proceed to toss logic below
+                } else {
+                    state->round_over = true;
+                    state->player_took_cards = false;
+                    state->ai_took_cards = false;
+                    return;
+                }
+            }
         }
 
         // On Medium skill: toss at most 2 cards per turn
@@ -82,6 +100,23 @@ void AITakeTurn(GameState* state, int card_skill) {
             state->player_took_cards = false;
             state->ai_took_cards = false;
             return;
+        }
+
+        // Classic "Durak" rule: cannot put more attacking cards on table
+        // than the defender had at the START of this round.
+        // Original defender count = current hand + cards already played in defense.
+        {
+            int defended_this_round = 0;
+            for (int i = 0; i < state->table_count; i++) {
+                if (state->table[i].has_defender) defended_this_round++;
+            }
+            int defender_original = state->player_hand.count + defended_this_round;
+            if (state->table_count >= defender_original) {
+                state->round_over = true;
+                state->player_took_cards = false;
+                state->ai_took_cards = false;
+                return;
+            }
         }
 
         bool attacked = false;

@@ -23,16 +23,22 @@ src/wanderer_hooded.h
 src/wanderer_idle.h
 src/table_sprite.h
 
-# UPX packer artifacts
+# UPX packer artifacts (no longer used - slim raylib build fits in 1.44MB natively)
 upx.exe
 *.upx
+
+# Build tools
+oxipng.exe
+gen_headers.bat
+
+# Slim raylib intermediate objects
+build/
 
 # Source art files
 *.psd
 
-# Build Artifacts (Keep source / lib, ignore build outputs if needed)
+# Build Artifacts
 TheRoyalCardshaper.exe
-build/
 bin/
 obj/
 out/
